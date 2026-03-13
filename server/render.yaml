@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: freedomlife-server
+    env: node
+    region: frankfurt
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: TOKEN
+        sync: false
+      - key: CHAT_ID
+        sync: false
