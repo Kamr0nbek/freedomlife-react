@@ -8,7 +8,11 @@ services:
     envVars:
       - key: PORT
         value: 3000
-      - key: TOKEN
+      - key: JWT_SECRET
+        value: freedomlife_jwt_secret_key_2024
+      - key: DATABASE_URL
         sync: false
-      - key: CHAT_ID
+      - key: TELEGRAM_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
         sync: false
