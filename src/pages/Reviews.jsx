@@ -37,7 +37,7 @@ const Reviews = () => {
     setReviews(updatedReviews);
     localStorage.setItem('freedomlife_reviews', JSON.stringify(updatedReviews));
 
-    // Отправка уведомления в Telegram
+    // Отправка уведомления в Telegram (без ошибок если сервер недоступен)
     try {
       await fetch('http://localhost:3000/api/submit', {
         method: 'POST',
@@ -51,7 +51,8 @@ const Reviews = () => {
         })
       });
     } catch (error) {
-      console.log('Telegram notification sent');
+      // Игнорируем ошибку - отзыв уже сохранён локально
+      console.log('Уведомление о отзыве сохранено локально');
     }
 
     setSubmitted(true);
