@@ -125,13 +125,18 @@ export async function activatePromoCode(req, res) {
 
     const promo = promoResult.rows[0];
 
-    // Проверяем, не использован ли уже
+    // Проверяем, использован ли код (одноразовый промокод)
+    if (promo.is_used) {
+      return res.status(400).json({ error: 'Этот промокод уже был использован' });
+    }
+
+    // Проверяем, не использовал ли уже этот пользователь многоразовый код
     const usedResult = await pool.query(
       'SELECT id FROM used_promo_codes WHERE user_id = $1 AND promo_code_id = $2',
       [req.user.id, promo.id]
     );
 
-    if (usedResult.rows.length > 0) {
+    if (usedResult.rows.length > 0 && !promo.is_used) {
       return res.status(400).json({ error: 'Вы уже использовали этот код' });
     }
 
@@ -142,8 +147,17 @@ export async function activatePromoCode(req, res) {
     );
 
     let oldSessions = 0;
+    let oldEndDate = null;
     if (subResult.rows.length > 0) {
       oldSessions = subResult.rows[0].sessions_left || 0;
+      oldEndDate = subResult.rows[0].end_date;
+    }
+
+    // Для Премиум абонемента - устанавливаем срок
+    let newEndDate = null;
+    if (promo.type === 'Премиум') {
+      newEndDate = new Date();
+      newEndDate.setFullYear(newEndDate.getFullYear() + 1);
     }
 
     // Применяем код
@@ -152,36 +166,52 @@ export async function activatePromoCode(req, res) {
         `UPDATE subscriptions 
          SET sessions_left = sessions_left + $1, 
              type = COALESCE($2, type),
+             end_date = COALESCE($3, end_date),
+             is_premium_pair = CASE WHEN $4 = 'Годовой 1+1' THEN TRUE ELSE is_premium_pair END,
              updated_at = CURRENT_TIMESTAMP
-         WHERE user_id = $3`,
-        [promo.sessions, promo.type, req.user.id]
+         WHERE user_id = $5`,
+        [promo.sessions, promo.type, newEndDate, promo.type, req.user.id]
       );
     } else {
       await pool.query(
-        `INSERT INTO subscriptions (user_id, sessions_left, type) VALUES ($1, $2, $3)`,
-        [req.user.id, promo.sessions, promo.type]
+        `INSERT INTO subscriptions (user_id, sessions_left, type, end_date, is_premium_pair) 
+         VALUES ($1, $2, $3, $4, $5)`,
+        [req.user.id, promo.sessions, promo.type, newEndDate, promo.type === 'Годовой 1+1']
       );
     }
 
-    // Отмечаем код как использованный
+    // Отмечаем код как использованный (одноразовый)
+    await pool.query(
+      'UPDATE promo_codes SET is_used = TRUE, used_by = $1, used_at = CURRENT_TIMESTAMP WHERE id = $2',
+      [req.user.id, promo.id]
+    );
+
+    // Записываем в историю использованных кодов
     await pool.query(
       'INSERT INTO used_promo_codes (user_id, promo_code_id) VALUES ($1, $2)',
       [req.user.id, promo.id]
     );
 
-    // Записываем в историю
+    // Записываем в историю абонемента
     await pool.query(
       `INSERT INTO subscription_history 
-       (user_id, action, sessions_change, old_sessions, new_sessions)
-       VALUES ($1, 'promo', $2, $3, $4)`,
-      [req.user.id, promo.sessions, oldSessions, oldSessions + promo.sessions]
+       (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date)
+       VALUES ($1, 'promo', $2, $3, $4, $5, $6)`,
+      [req.user.id, promo.sessions, oldSessions, oldSessions + promo.sessions, oldEndDate, newEndDate]
     );
 
     // Уведомление
+    let message = `Вы активировали код на ${promo.sessions} занятий`;
+    if (promo.type === 'Премиум') {
+      message = `Вы активировали промокод "Премиум" - 8 занятий в месяц на 1 год`;
+    } else if (promo.type === 'Годовой 1+1') {
+      message = `Вы активировали промокод "Годовой 1+1" - абонемент для двоих на год`;
+    }
+
     await pool.query(
       `INSERT INTO notifications (user_id, title, message) 
        VALUES ($1, $2, $3)`,
-      [req.user.id, 'Промокод активирован', `Вы активировали код на ${promo.sessions} занятий`]
+      [req.user.id, 'Промокод активирован', message]
     );
 
     const updated = await pool.query('SELECT * FROM subscriptions WHERE user_id = $1', [req.user.id]);
@@ -189,7 +219,8 @@ export async function activatePromoCode(req, res) {
     res.json({ 
       message: 'Промокод активирован', 
       subscription: updated.rows[0],
-      added_sessions: promo.sessions
+      added_sessions: promo.sessions,
+      promo_type: promo.type
     });
   } catch (error) {
     console.error('Ошибка активации промокода:', error);
@@ -257,16 +288,16 @@ export async function adminUpdateSubscription(req, res) {
 
 // Админ: создание промокода
 export async function createPromoCode(req, res) {
-  const { code, sessions, type } = req.body;
+  const { code, sessions, type, months } = req.body;
 
-  if (!code || !sessions) {
-    return res.status(400).json({ error: 'Укажите код и количество занятий' });
+  if (!code || !sessions || !type) {
+    return res.status(400).json({ error: 'Укажите код, количество занятий и тип' });
   }
 
   try {
     const result = await pool.query(
-      'INSERT INTO promo_codes (code, sessions, type) VALUES ($1, $2, $3) RETURNING *',
-      [code, sessions, type || 'Стандартный']
+      'INSERT INTO promo_codes (code, sessions, type, months) VALUES ($1, $2, $3, $4) RETURNING *',
+      [code, sessions, type, months || null]
     );
 
     res.status(201).json({ message: 'Промокод создан', promo_code: result.rows[0] });
@@ -282,7 +313,15 @@ export async function createPromoCode(req, res) {
 // Получить все промокоды (админ)
 export async function getAllPromoCodes(req, res) {
   try {
-    const result = await pool.query('SELECT * FROM promo_codes ORDER BY created_at DESC');
+    const result = await pool.query(`
+      SELECT 
+        pc.*,
+        u.name as used_by_name,
+        u.email as used_by_email
+      FROM promo_codes pc
+      LEFT JOIN users u ON pc.used_by = u.id
+      ORDER BY pc.created_at DESC
+    `);
     res.json(result.rows);
   } catch (error) {
     console.error('Ошибка получения промокодов:', error);

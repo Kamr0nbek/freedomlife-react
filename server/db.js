@@ -75,9 +75,22 @@ export async function initDatabase() {
         sessions INTEGER NOT NULL,
         type VARCHAR(50),
         is_active BOOLEAN DEFAULT TRUE,
+        is_used BOOLEAN DEFAULT FALSE,
+        used_by INTEGER REFERENCES users(id),
+        used_at TIMESTAMP,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Добавляем колонку is_used, если она ещё не существует (миграция)
+    try {
+      await client.query(`ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS is_used BOOLEAN DEFAULT FALSE`);
+      await client.query(`ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS used_by INTEGER REFERENCES users(id)`);
+      await client.query(`ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS used_at TIMESTAMP`);
+      await client.query(`ALTER TABLE promo_codes ADD COLUMN IF NOT EXISTS months INTEGER`);
+    } catch (e) {
+      // Колонки уже существуют
+    }
 
     // Таблица использованных промокодов
     await client.query(`

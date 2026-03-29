@@ -553,11 +553,28 @@ export default function Dashboard() {
       const data = await res.json();
       
       if (!res.ok) {
-        setPromoMessage(data.error || 'Ошибка');
+        // Обработка разных ошибок
+        if (data.error?.includes('уже использован')) {
+          setPromoMessage('Этот промокод уже был использован');
+        } else if (data.error?.includes('неверный')) {
+          setPromoMessage('Неверный или неактивный код');
+        } else {
+          setPromoMessage(data.error || 'Ошибка активации');
+        }
         return;
       }
       
-      setPromoMessage(`Успешно! Добавлено ${data.added_sessions} занятий`);
+      // Успешная активация - разные сообщения для разных типов
+      let successMsg = '';
+      if (data.promo_type === 'Премиум') {
+        successMsg = 'Успешно! Активирован абонемент Премиум на 1 год';
+      } else if (data.promo_type === 'Годовой 1+1') {
+        successMsg = 'Успешно! Активирован абонемент Годовой 1+1 для двоих';
+      } else {
+        successMsg = `Успешно! Добавлено ${data.added_sessions} занятий`;
+      }
+      
+      setPromoMessage(successMsg);
       setPromoCode('');
       loadData();
     } catch (error) {

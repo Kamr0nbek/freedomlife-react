@@ -3,8 +3,28 @@ import { useAuth, useApi } from '../context/AuthContext';
 import { motion } from 'framer-motion';
 import { 
   Users, Calendar, CreditCard, BarChart3, Plus, Check, X, 
-  Clock, AlertCircle, LogOut, Bell
+  Clock, AlertCircle, LogOut, Bell, ChevronDown, Tag, 
+  Trash2, MoreVertical, CalendarDays
 } from 'lucide-react';
+
+// Конфигурация статусов записей
+const STATUS_CONFIG = {
+  scheduled: { label: 'Записан', color: 'bg-blue-100 text-blue-700', icon: CalendarDays },
+  attended: { label: 'Пришёл', color: 'bg-green-100 text-green-700', icon: Check },
+  no_show: { label: 'Не пришёл', color: 'bg-red-100 text-red-700', icon: X },
+  excused: { label: 'Уважительная причина', color: 'bg-amber-100 text-amber-700', icon: AlertCircle },
+  client_error: { label: 'Ошибка клиента', color: 'bg-gray-100 text-gray-700', icon: Clock },
+  cancelled: { label: 'Отменён', color: 'bg-gray-100 text-gray-500', icon: X },
+};
+
+// Типы абонементов для промокодов
+const ABONEMENT_TYPES = [
+  { value: 'Старт', label: 'Старт', sessions: 10, months: null, description: '10 занятий' },
+  { value: 'Базовый', label: 'Базовый', sessions: 30, months: null, description: '30 занятий' },
+  { value: 'Оптимальный', label: 'Оптимальный', sessions: 55, months: null, description: '55 занятий' },
+  { value: 'Премиум', label: 'Премиум', sessions: 8, months: 12, description: '8 занятий/мес × 12 мес' },
+  { value: 'Годовой 1+1', label: 'Годовой 1+1', sessions: 96, months: 12, description: 'Для двоих на год' },
+];
 
 export default function AdminPanel() {
   const { user, logout } = useAuth();
@@ -14,15 +34,29 @@ export default function AdminPanel() {
   const [users, setUsers] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [promoCodes, setPromoCodes] = useState([]);
+  const [openActionsMenu, setOpenActionsMenu] = useState(null);
   
   // Формы
-  const [promoForm, setPromoForm] = useState({ code: '', sessions: 10, type: 'Стандартный' });
+  const [promoForm, setPromoForm] = useState({ 
+    code: '', 
+    sessions: 10, 
+    type: 'Старт',
+    months: null
+  });
   const [subForm, setSubForm] = useState({ user_id: '', sessions_change: 0, end_date: '' });
   const [filterDate, setFilterDate] = useState('');
 
   useEffect(() => {
     loadData();
   }, [filterDate]);
+
+  // Загрузка промокодов при переходе на вкладку
+  useEffect(() => {
+    if (activeTab === 'promo') {
+      loadPromoCodes();
+    }
+  }, [activeTab]);
 
   const loadData = async () => {
     setLoading(true);
@@ -43,6 +77,17 @@ export default function AdminPanel() {
     }
   };
 
+  const loadPromoCodes = async () => {
+    try {
+      const res = await api.get('/subscriptions/promo/all');
+      if (res.ok) {
+        setPromoCodes(await res.json());
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки промокодов:', error);
+    }
+  };
+
   const handleStatusChange = async (bookingId, status) => {
     try {
       const res = await api.put(`/bookings/${bookingId}/status`, { status });
@@ -52,6 +97,48 @@ export default function AdminPanel() {
       }
     } catch (error) {
       alert('Ошибка');
+    }
+  };
+
+  const handleDeleteBooking = async (bookingId) => {
+    if (!confirm('Вы уверены, что хотите удалить эту запись?')) return;
+    
+    try {
+      const res = await api.delete(`/bookings/${bookingId}`);
+      if (res.ok) {
+        alert('Запись удалена');
+        loadData();
+      } else {
+        alert('Ошибка удаления');
+      }
+    } catch (error) {
+      alert('Ошибка удаления');
+    }
+  };
+
+  const toggleActionsMenu = (bookingId) => {
+    setOpenActionsMenu(openActionsMenu === bookingId ? null : bookingId);
+  };
+
+  // Закрыть меню при клике вне
+  useEffect(() => {
+    const handleClickOutside = () => setOpenActionsMenu(null);
+    if (openActionsMenu) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [openActionsMenu]);
+
+  // Обработчик изменения типа абонемента
+  const handleTypeChange = (typeValue) => {
+    const selectedType = ABONEMENT_TYPES.find(t => t.value === typeValue);
+    if (selectedType) {
+      setPromoForm({
+        ...promoForm,
+        type: selectedType.value,
+        sessions: selectedType.sessions,
+        months: selectedType.months
+      });
     }
   };
 
@@ -67,7 +154,8 @@ export default function AdminPanel() {
       }
       
       alert('Промокод создан!');
-      setPromoForm({ code: '', sessions: 10, type: 'Стандартный' });
+      setPromoForm({ code: '', sessions: 10, type: 'Старт', months: null });
+      loadPromoCodes(); // Обновить список
     } catch (error) {
       alert('Ошибка');
     }
@@ -177,93 +265,184 @@ export default function AdminPanel() {
         {/* Записи */}
         {activeTab === 'bookings' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">Все записи</h2>
-                <input
-                  type="date"
-                  value={filterDate}
-                  onChange={(e) => setFilterDate(e.target.value)}
-                  className="px-4 py-2 border border-gray-200 rounded-xl"
-                />
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              {/* Заголовок с фильтром */}
+              <div className="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <h2 className="text-xl font-bold text-gray-800">Все записи</h2>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-gray-500">Фильтр по дате:</span>
+                  <div className="relative">
+                    <input
+                      type="date"
+                      value={filterDate}
+                      onChange={(e) => setFilterDate(e.target.value)}
+                      className="pl-4 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none bg-gray-50 hover:bg-white transition-colors"
+                    />
+                    {filterDate && (
+                      <button
+                        onClick={() => setFilterDate('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
               
+              {/* Таблица */}
               {bookings.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">Нет записей</p>
+                <div className="p-12 text-center">
+                  <CalendarDays className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">Нет записей</p>
+                </div>
               ) : (
                 <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Клиент</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Дата</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Время</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Тренажёр</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Статус</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Действия</th>
+                  <table className="w-full min-w-[800px]">
+                    <thead>
+                      <tr className="bg-gray-50/80">
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Клиент</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Дата</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Время</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Тренажёр</th>
+                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Статус</th>
+                        <th className="px-5 py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Действия</th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {bookings.map(booking => (
-                        <tr key={booking.id} className="border-t border-gray-100">
-                          <td className="px-4 py-3">
-                            <p className="font-medium">{booking.user_name || 'Неизвестно'}</p>
-                            <p className="text-sm text-gray-500">{booking.user_phone || booking.user_email}</p>
-                          </td>
-                          <td className="px-4 py-3">{formatDate(booking.booking_date)}</td>
-                          <td className="px-4 py-3">{booking.booking_time?.substring(0, 5)}</td>
-                          <td className="px-4 py-3">
-                            {booking.machine_level} ур.
-                            {booking.partner_machine_level && ` + ${booking.partner_machine_level} ур. (партнёр)`}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-1 rounded-full text-xs ${
-                              booking.status === 'scheduled' ? 'bg-blue-100 text-blue-600' :
-                              booking.status === 'completed' ? 'bg-green-100 text-green-600' :
-                              booking.status === 'cancelled' ? 'bg-red-100 text-red-600' :
-                              'bg-gray-100 text-gray-600'
-                            }`}>
-                              {booking.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            {booking.status === 'scheduled' && (
-                              <div className="flex gap-1">
-                                <button
-                                  onClick={() => handleStatusChange(booking.id, 'completed')}
-                                  className="p-2 bg-green-100 text-green-600 rounded-lg hover:bg-green-200"
-                                  title="Пришёл"
-                                >
-                                  <Check className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleStatusChange(booking.id, 'no_show')}
-                                  className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200"
-                                  title="Не пришёл"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleStatusChange(booking.id, 'excused')}
-                                  className="p-2 bg-amber-100 text-amber-600 rounded-lg hover:bg-amber-200"
-                                  title="Уважительная причина"
-                                >
-                                  <AlertCircle className="w-4 h-4" />
-                                </button>
-                                <button
-                                  onClick={() => handleStatusChange(booking.id, 'error')}
-                                  className="p-2 bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200"
-                                  title="Ошибка клиента"
-                                >
-                                  <Clock className="w-4 h-4" />
-                                </button>
+                    <tbody className="divide-y divide-gray-100">
+                      {bookings.map(booking => {
+                        const statusConfig = STATUS_CONFIG[booking.status] || STATUS_CONFIG.scheduled;
+                        const StatusIcon = statusConfig.icon;
+                        
+                        return (
+                          <tr 
+                            key={booking.id} 
+                            className="hover:bg-gray-50/50 transition-colors group"
+                          >
+                            {/* Клиент */}
+                            <td className="px-5 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-medium text-gray-900">{booking.user_name || 'Неизвестно'}</span>
+                                <span className="text-sm text-gray-500">{booking.user_phone || booking.user_email || '-'}</span>
                               </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                            </td>
+                            
+                            {/* Дата */}
+                            <td className="px-5 py-4 whitespace-nowrap">
+                              <span className="text-sm text-gray-700">
+                                {new Date(booking.booking_date).toLocaleDateString('ru-RU', { 
+                                  day: 'numeric', 
+                                  month: 'short',
+                                  year: 'numeric'
+                                })}
+                              </span>
+                            </td>
+                            
+                            {/* Время */}
+                            <td className="px-5 py-4 whitespace-nowrap">
+                              <span className="text-sm font-medium text-gray-900">
+                                {booking.booking_time?.substring(0, 5) || '-'}
+                              </span>
+                            </td>
+                            
+                            {/* Тренажёр */}
+                            <td className="px-5 py-4">
+                              <div className="flex flex-col">
+                                <span className="text-sm text-gray-700">
+                                  <span className="font-medium">Уровень {booking.machine_level}</span>
+                                </span>
+                                {booking.partner_machine_level && (
+                                  <span className="text-xs text-gray-500">
+                                    + Партнёр: ур. {booking.partner_machine_level}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            
+                            {/* Статус */}
+                            <td className="px-5 py-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium ${statusConfig.color}`}>
+                                <StatusIcon className="w-3.5 h-3.5" />
+                                {statusConfig.label}
+                              </span>
+                            </td>
+                            
+                            {/* Действия */}
+                            <td className="px-5 py-4 whitespace-nowrap text-right">
+                              <div className="relative inline-block">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleActionsMenu(booking.id);
+                                  }}
+                                  className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                  <MoreVertical className="w-5 h-5" />
+                                </button>
+                                
+                                {/* Dropdown меню */}
+                                {openActionsMenu === booking.id && (
+                                  <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-20">
+                                    <div className="px-3 py-2 border-b border-gray-100">
+                                      <span className="text-xs font-medium text-gray-500 uppercase">Изменить статус</span>
+                                    </div>
+                                    
+                                    <button
+                                      onClick={() => { handleStatusChange(booking.id, 'attended'); setOpenActionsMenu(null); }}
+                                      className="w-full px-3 py-2.5 text-left text-sm text-green-700 hover:bg-green-50 flex items-center gap-2"
+                                    >
+                                      <Check className="w-4 h-4" />
+                                      Пришёл
+                                    </button>
+                                    <button
+                                      onClick={() => { handleStatusChange(booking.id, 'no_show'); setOpenActionsMenu(null); }}
+                                      className="w-full px-3 py-2.5 text-left text-sm text-red-700 hover:bg-red-50 flex items-center gap-2"
+                                    >
+                                      <X className="w-4 h-4" />
+                                      Не пришёл
+                                    </button>
+                                    <button
+                                      onClick={() => { handleStatusChange(booking.id, 'excused'); setOpenActionsMenu(null); }}
+                                      className="w-full px-3 py-2.5 text-left text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-2"
+                                    >
+                                      <AlertCircle className="w-4 h-4" />
+                                      Уважительная причина
+                                    </button>
+                                    <button
+                                      onClick={() => { handleStatusChange(booking.id, 'client_error'); setOpenActionsMenu(null); }}
+                                      className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                    >
+                                      <Clock className="w-4 h-4" />
+                                      Ошибка клиента
+                                    </button>
+                                    
+                                    <div className="border-t border-gray-100 mt-1 pt-1">
+                                      <button
+                                        onClick={() => { handleDeleteBooking(booking.id); setOpenActionsMenu(null); }}
+                                        className="w-full px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                        Удалить запись
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
+                </div>
+              )}
+              
+              {/* Footer с количеством */}
+              {bookings.length > 0 && (
+                <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+                  <span className="text-sm text-gray-500">
+                    Всего записей: <span className="font-medium text-gray-700">{bookings.length}</span>
+                  </span>
                 </div>
               )}
             </div>
@@ -315,6 +494,7 @@ export default function AdminPanel() {
         {/* Промокоды */}
         {activeTab === 'promo' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {/* Форма создания */}
             <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
               <h2 className="text-xl font-bold mb-4">Создать промокод</h2>
               
@@ -326,10 +506,28 @@ export default function AdminPanel() {
                     value={promoForm.code}
                     onChange={(e) => setPromoForm({ ...promoForm, code: e.target.value.toUpperCase() })}
                     placeholder="SUMMER2024"
-                    className="px-4 py-3 border border-gray-200 rounded-xl"
+                    className="px-4 py-3 border border-gray-200 rounded-xl w-40"
                     required
                   />
                 </div>
+                
+                <div className="relative">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Тип абонемента</label>
+                  <select
+                    value={promoForm.type}
+                    onChange={(e) => handleTypeChange(e.target.value)}
+                    className="px-4 py-3 border border-gray-200 rounded-xl w-48 appearance-none bg-white cursor-pointer"
+                    required
+                  >
+                    {ABONEMENT_TYPES.map(type => (
+                      <option key={type.value} value={type.value}>
+                        {type.label} - {type.description}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="absolute right-3 top-9 w-5 h-5 text-gray-400 pointer-events-none" />
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Занятий</label>
                   <input
@@ -340,22 +538,94 @@ export default function AdminPanel() {
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Тип</label>
-                  <input
-                    type="text"
-                    value={promoForm.type}
-                    onChange={(e) => setPromoForm({ ...promoForm, type: e.target.value })}
-                    className="px-4 py-3 border border-gray-200 rounded-xl"
-                  />
-                </div>
+
+                {promoForm.months && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Срок (мес)</label>
+                    <input
+                      type="number"
+                      value={promoForm.months}
+                      onChange={(e) => setPromoForm({ ...promoForm, months: parseInt(e.target.value) })}
+                      className="px-4 py-3 border border-gray-200 rounded-xl w-24"
+                    />
+                  </div>
+                )}
+
                 <button
                   type="submit"
-                  className="px-6 py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-xl font-medium"
+                  className="px-6 py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-xl font-medium flex items-center gap-2"
                 >
+                  <Plus className="w-5 h-5" />
                   Создать
                 </button>
               </form>
+            </div>
+
+            {/* Список промокодов */}
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <h2 className="text-xl font-bold mb-4">Все промокоды</h2>
+              
+              {promoCodes.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">Промокодов пока нет</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Код</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Тип</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Занятий</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Срок</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Статус</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Использован</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Дата</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {promoCodes.map(promo => (
+                        <tr key={promo.id} className="border-t border-gray-100">
+                          <td className="px-4 py-3">
+                            <span className="font-mono font-semibold text-teal-600">{promo.code}</span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className="px-2 py-1 bg-blue-100 text-blue-600 rounded-full text-xs font-medium">
+                              {promo.type}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">{promo.sessions}</td>
+                          <td className="px-4 py-3">{promo.months ? `${promo.months} мес` : '-'}</td>
+                          <td className="px-4 py-3">
+                            {promo.is_used ? (
+                              <span className="px-2 py-1 bg-red-100 text-red-600 rounded-full text-xs flex items-center gap-1 w-fit">
+                                <X className="w-3 h-3" /> Использован
+                              </span>
+                            ) : promo.is_active ? (
+                              <span className="px-2 py-1 bg-green-100 text-green-600 rounded-full text-xs flex items-center gap-1 w-fit">
+                                <Check className="w-3 h-3" /> Активен
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded-full text-xs">Неактивен</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {promo.is_used ? (
+                              <div className="text-sm">
+                                <p className="font-medium">{promo.used_by_name || 'Пользователь'}</p>
+                                <p className="text-gray-500 text-xs">{promo.used_by_email}</p>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-500">
+                            {formatDate(promo.created_at)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
