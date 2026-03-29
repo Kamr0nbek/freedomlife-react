@@ -25,6 +25,8 @@ const TOKEN = process.env.TELEGRAM_TOKEN || '8398511660:AAGL4rbX5ZpuooRHD8jC6N1X
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID || '1340893129';
 const TELEGRAM_API = `https://api.telegram.org/bot${TOKEN}`;
 
+console.log('Telegram config:', { TOKEN: TOKEN ? 'set' : 'missing', CHAT_ID });
+
 // Эндпоинт для отправки заявки
 app.post('/api/submit', async (req, res) => {
   const { name, phone, email, message, type } = req.body;
@@ -39,15 +41,18 @@ app.post('/api/submit', async (req, res) => {
 📌 *Тип:* ${type || 'Общая заявка'}
   `;
 
+  console.log('Sending to Telegram:', { CHAT_ID, hasToken: !!TOKEN });
+
   try {
-    await axios.post(`${TELEGRAM_API}/sendMessage`, {
+    const response = await axios.post(`${TELEGRAM_API}/sendMessage`, {
       chat_id: CHAT_ID,
       text: text,
       parse_mode: 'Markdown'
     });
+    console.log('Telegram sent successfully');
     res.json({ success: true });
   } catch (error) {
-    console.error('Error sending message:', error.response?.data || error.message);
+    console.error('Telegram error:', error.response?.data || error.message);
     res.status(500).json({ success: false, error: 'Ошибка отправки' });
   }
 });

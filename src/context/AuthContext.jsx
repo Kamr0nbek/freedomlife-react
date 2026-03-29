@@ -50,9 +50,18 @@ export function AuthProvider({ children }) {
       throw new Error(data.error || 'Ошибка входа');
     }
     
+    // Сохраняем token и сразу получаем данные пользователя
     localStorage.setItem('token', data.token);
     setToken(data.token);
-    setUser(data.user);
+    
+    // Сразу загружаем данные пользователя
+    const userRes = await fetch(`${API_URL}/auth/me`, {
+      headers: { Authorization: `Bearer ${data.token}` }
+    });
+    if (userRes.ok) {
+      const userData = await userRes.json();
+      setUser(userData);
+    }
     
     return data;
   };
@@ -72,7 +81,15 @@ export function AuthProvider({ children }) {
     
     localStorage.setItem('token', data.token);
     setToken(data.token);
-    setUser(data.user);
+    
+    // Сразу загружаем данные пользователя
+    const userRes = await fetch(`${API_URL}/auth/me`, {
+      headers: { Authorization: `Bearer ${data.token}` }
+    });
+    if (userRes.ok) {
+      const userData = await userRes.json();
+      setUser(userData);
+    }
     
     return data;
   };
