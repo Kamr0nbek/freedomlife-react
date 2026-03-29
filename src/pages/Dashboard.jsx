@@ -41,13 +41,34 @@ function CalendarPicker({ selectedDate, onSelectDate, minDate, maxDate, disabled
 
   const isDisabled = (date) => {
     if (!date) return true;
-    const dateStr = formatDateStr(date);
-    const min = minDate ? new Date(minDate) : null;
-    const max = maxDate ? new Date(maxDate) : null;
     
-    if (min && date < min) return true;
-    if (max && date > max) return true;
+    // Воскресенье недоступно (день недели = 0)
+    const dayOfWeek = date.getDay();
+    if (dayOfWeek === 0) return true;
+    
+    const dateStr = formatDateStr(date);
+    
+    // Проверка минимальной даты (завтрашний день)
+    if (minDate) {
+      const minDateObj = new Date(minDate);
+      minDateObj.setHours(0, 0, 0, 0);
+      const checkDate = new Date(date);
+      checkDate.setHours(0, 0, 0, 0);
+      if (checkDate < minDateObj) return true;
+    }
+    
+    // Проверка максимальной даты
+    if (maxDate) {
+      const maxDateObj = new Date(maxDate);
+      maxDateObj.setHours(0, 0, 0, 0);
+      const checkDate = new Date(date);
+      checkDate.setHours(0, 0, 0, 0);
+      if (checkDate > maxDateObj) return true;
+    }
+    
+    // Проверка кастомных заблокированных дат
     if (disabledDates.includes(dateStr)) return true;
+    
     return false;
   };
 
@@ -125,9 +146,9 @@ function CalendarPicker({ selectedDate, onSelectDate, minDate, maxDate, disabled
 // Компонент карточки уровня
 function LevelCard({ level, selected, onClick, disabled }) {
   const levelInfo = {
-    1: { name: 'Уровень 1', desc: 'Начинающий', color: 'from-green-400 to-emerald-500' },
-    2: { name: 'Уровень 2', desc: 'Средний', color: 'from-amber-400 to-orange-500' },
-    3: { name: 'Уровень 3', desc: 'Продвинутый', color: 'from-red-400 to-rose-500' }
+    1: { name: 'Уровень 1', color: 'from-green-400 to-emerald-500' },
+    2: { name: 'Уровень 2', color: 'from-amber-400 to-orange-500' },
+    3: { name: 'Уровень 3', color: 'from-red-400 to-rose-500' }
   };
   
   const info = levelInfo[level];
@@ -145,7 +166,6 @@ function LevelCard({ level, selected, onClick, disabled }) {
     >
       <div className="relative z-10">
         <p className="text-white font-bold text-lg">{info.name}</p>
-        <p className="text-white/80 text-sm">{info.desc}</p>
       </div>
       <Gauge className="absolute right-3 bottom-3 w-8 h-8 text-white/30" />
     </button>
