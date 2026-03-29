@@ -6,7 +6,7 @@ const servicesData = [
   {
     icon: Disc,
     title: 'Грыжи позвоночника',
-    description: 'Консервативное и хирургическое лечение. Физиотерапия, мануальная терапия, современные методики на аппаратах Freespine.',
+    description: 'Физиотерапия, мануальная терапия, современные методики на аппаратах Freespine.',
     color: 'from-teal-500 to-teal-600',
     bgColor: 'bg-teal-50'
   },

@@ -1,6 +1,10 @@
+
+
+
 import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Phone } from 'lucide-react';
+import { Menu, X, Phone, User } from 'lucide-react';
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -64,32 +68,45 @@ const Navbar = () => {
             ))}
           </div>
 
-          {/* CTA Button & Mobile Menu */}
-          <div className="flex items-center gap-4">
-            <motion.a 
-              href="tel:+77077998898"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className={`hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors ${
-                isScrolled 
-                  ? 'bg-teal-500 text-white hover:bg-teal-600' 
-                  : 'bg-white/10 text-white hover:bg-white/20 backdrop-blur-sm'
-              }`}
-            >
-              <Phone className="w-4 h-4" />
-              <span>+7 (707) 799-88-98</span>
-            </motion.a>
+ {/* CTA Button & Auth & Mobile Menu */}
+<div className="flex items-center gap-3">
+ {/* Кнопка входа */}
+<Link 
+ to="/login"
+ className={`hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors ${
+ isScrolled 
+ ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' 
+ : 'bg-white/10 text-white hover:bg-white/20 backdrop-blur-sm'
+ }`}
+ >
+<User className="w-4 h-4" />
+<span>Вход</span>
+</Link>
 
-            {/* Mobile Menu Button */}
-            <button 
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className={`lg:hidden p-2 rounded-lg transition-colors ${
-                isScrolled ? 'text-gray-900' : 'text-white'
-              }`}
-            >
-              {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
-          </div>
+<motion.a 
+ href="tel:+77077998898"
+ whileHover={{ scale:1.05 }}
+ whileTap={{ scale:0.95 }}
+ className={`hidden sm:flex items-center gap-2 px-4 py-2 rounded-xl font-medium transition-colors ${
+ isScrolled 
+ ? 'bg-teal-500 text-white hover:bg-teal-600' 
+ : 'bg-white/10 text-white hover:bg-white/20 backdrop-blur-sm'
+ }`}
+ >
+<Phone className="w-4 h-4" />
+<span>+7 (707)799-88-98</span>
+</motion.a>
+
+ {/* Mobile Menu Button */}
+<button 
+ onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+ className={`lg:hidden p-2 rounded-lg transition-colors ${
+ isScrolled ? 'text-gray-900' : 'text-white'
+ }`}
+ >
+ {mobileMenuOpen ?<X className="w-6 h-6" /> :<Menu className="w-6 h-6" />}
+</button>
+</div>
         </div>
       </div>
 
@@ -102,24 +119,31 @@ const Navbar = () => {
             exit={{ opacity: 0, height: 0 }}
             className="lg:hidden bg-white shadow-xl"
           >
-            <div className="container-custom py-6 space-y-4">
-              {navLinks.map((link, index) => (
-                <a
-                  key={index}
-                  href={link.path}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="block py-3 px-4 text-gray-700 hover:bg-teal-50 hover:text-teal-600 rounded-xl font-medium transition-colors"
-                >
-                  {link.name}
-                </a>
-              ))}
-              <a 
-                href="tel:+77077998898"
-                className="block py-3 px-4 bg-teal-500 text-white text-center rounded-xl font-medium hover:bg-teal-600 transition-colors"
-              >
-                +7 (707) 799-88-98
-              </a>
-            </div>
+<div className="container-custom py-6 space-y-4">
+ {navLinks.map((link, index) => (
+<a
+ key={index}
+ href={link.path}
+ onClick={() => setMobileMenuOpen(false)}
+ className="block py-3 px-4 text-gray-700 hover:bg-teal-50 hover:text-teal-600 rounded-xl font-medium transition-colors"
+ >
+ {link.name}
+</a>
+ ))}
+<Link 
+ to="/login"
+ onClick={() => setMobileMenuOpen(false)}
+ className="block py-3 px-4 bg-gray-100 text-gray-700 text-center rounded-xl font-medium hover:bg-gray-200 transition-colors"
+ >
+ Вход / Регистрация
+</Link>
+<a 
+ href="tel:+77077998898"
+ className="block py-3 px-4 bg-teal-500 text-white text-center rounded-xl font-medium hover:bg-teal-600 transition-colors"
+ >
+ +7 (707)799-88-98
+</a>
+</div>
           </motion.div>
         )}
       </AnimatePresence>
