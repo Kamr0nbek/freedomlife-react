@@ -2,20 +2,8 @@ import { createContext, useContext, useState, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
-// Автоматическое определение API URL
-const getApiUrl = () => {
-  // В продакшене используем переменную окружения или URL рендера
-  const prodUrl = import.meta.env.VITE_API_URL || 'https://freedomlife-server.onrender.com/api';
-  
-  // Локальная разработка
-  if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    return 'http://localhost:3000/api';
-  }
-  
-  return prodUrl;
-};
-
-const API_URL = getApiUrl();
+// API URL - продакшен (Render)
+const API_URL = 'https://freedomlife-server.onrender.com/api';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
