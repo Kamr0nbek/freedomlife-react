@@ -39,7 +39,7 @@ const Reviews = () => {
 
     // Отправка уведомления в Telegram (без ошибок если сервер недоступен)
     try {
-      await fetch('http://localhost:3000/api/submit', {
+      await fetch('https://freedomlife-server.onrender.com/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
