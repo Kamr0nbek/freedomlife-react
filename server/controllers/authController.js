@@ -2,13 +2,25 @@ import bcrypt from 'bcryptjs';
 import pool from '../db.js';
 import { generateToken } from '../middleware/auth.js';
 
+// Определение уровня по весу
+function getMachineLevelByWeight(weight) {
+  if (!weight) return null;
+  if (weight >= 50 && weight <= 65) return 1;
+  if (weight > 65 && weight <= 85) return 2;
+  if (weight > 85 && weight <= 100) return 3;
+  return null;
+}
+
 // Регистрация
 export async function register(req, res) {
-  const { email, password, name, phone } = req.body;
+  const { email, password, name, phone, weight } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ error: 'Email и пароль обязательны' });
   }
+
+  // Определяем уровень по весу
+  const machineLevel = getMachineLevelByWeight(weight);
 
   try {
     // Проверка существующего пользователя
@@ -22,8 +34,8 @@ export async function register(req, res) {
 
     // Создание пользователя
     const result = await pool.query(
-      'INSERT INTO users (email, password, name, phone) VALUES ($1, $2, $3, $4) RETURNING id, email, name, phone, role',
-      [email, hashedPassword, name || null, phone || null]
+      'INSERT INTO users (email, password, name, phone, weight, machine_level) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, email, name, phone, weight, machine_level, role',
+      [email, hashedPassword, name || null, phone || null, weight || null, machineLevel]
     );
 
     const user = result.rows[0];
@@ -86,7 +98,7 @@ export async function login(req, res) {
 export async function getMe(req, res) {
   try {
     const result = await pool.query(
-      `SELECT u.id, u.email, u.name, u.phone, u.role, u.created_at,
+      `SELECT u.id, u.email, u.name, u.phone, u.weight, u.machine_level, u.role, u.created_at,
               s.sessions_left, s.end_date, s.type, s.is_premium_pair
        FROM users u
        LEFT JOIN subscriptions s ON u.id = s.user_id
@@ -112,6 +124,8 @@ export async function getMe(req, res) {
       email: user.email,
       name: user.name,
       phone: user.phone,
+      weight: user.weight,
+      machine_level: user.machine_level,
       role: user.role,
       created_at: user.created_at,
       subscription: {
@@ -154,7 +168,7 @@ export async function updateProfile(req, res) {
 export async function getAllUsers(req, res) {
   try {
     const result = await pool.query(
-      `SELECT u.id, u.email, u.name, u.phone, u.role, u.created_at,
+      `SELECT u.id, u.email, u.name, u.phone, u.weight, u.machine_level, u.role, u.created_at,
               s.sessions_left, s.end_date, s.type, s.is_premium_pair
        FROM users u
        LEFT JOIN subscriptions s ON u.id = s.user_id

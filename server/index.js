@@ -10,6 +10,16 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Корневой маршрут
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    service: 'FreedomLife API Server',
+    version: '1.0.0',
+    endpoints: ['/api/health', '/api/auth', '/api/subscriptions', '/api/bookings', '/api/reviews', '/api/notifications']
+  });
+});
+
 // Подключение к БД
 import { pool, initDatabase } from './db.js';
 
@@ -76,11 +86,53 @@ app.get('/api/admin/stats', async (req, res) => {
     );
     const totalSessions = await pool.query('SELECT SUM(sessions_left) as total FROM subscriptions');
 
+    // Расширенная статистика
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    
+    const monthAgo = new Date();
+    monthAgo.setDate(monthAgo.getDate() - 30);
+    
+    const bookingsThisWeek = await pool.query(
+      "SELECT COUNT(*) as count FROM bookings WHERE booking_date >= $1",
+      [weekAgo.toISOString().split('T')[0]]
+    );
+    
+    const completedThisMonth = await pool.query(
+      "SELECT COUNT(*) as count FROM bookings WHERE booking_date >= $1 AND status = 'completed'",
+      [monthAgo.toISOString().split('T')[0]]
+    );
+    
+    const cancelledThisMonth = await pool.query(
+      "SELECT COUNT(*) as count FROM bookings WHERE booking_date >= $1 AND status = 'cancelled'",
+      [monthAgo.toISOString().split('T')[0]]
+    );
+    
+    const noShowsThisMonth = await pool.query(
+      "SELECT COUNT(*) as count FROM bookings WHERE booking_date >= $1 AND status = 'no_show'",
+      [monthAgo.toISOString().split('T')[0]]
+    );
+    
+    // Статистика по уровням
+    const levelStats = await pool.query(
+      `SELECT machine_level, COUNT(*) as count 
+       FROM bookings 
+       WHERE booking_date >= $1 AND status = 'completed'
+       GROUP BY machine_level`,
+      [monthAgo.toISOString().split('T')[0]]
+    );
+
     res.json({
       users: parseInt(usersCount.rows[0].count),
       bookings_today: parseInt(bookingsToday.rows[0].count),
       completed_today: parseInt(completedToday.rows[0].count),
-      total_sessions: totalSessions.rows[0].total || 0
+      total_sessions: totalSessions.rows[0].total || 0,
+      // Расширенная статистика
+      bookings_this_week: parseInt(bookingsThisWeek.rows[0].count),
+      completed_this_month: parseInt(completedThisMonth.rows[0].count),
+      cancelled_this_month: parseInt(cancelledThisMonth.rows[0].count),
+      no_shows_this_month: parseInt(noShowsThisMonth.rows[0].count),
+      level_stats: levelStats.rows
     });
   } catch (error) {
     console.error('Ошибка статистики:', error);
@@ -91,7 +143,7 @@ app.get('/api/admin/stats', async (req, res) => {
 // Проверка БД
 app.get('/api/health', async (req, res) => {
  try {
- await pool.query('SELECT1');
+    await pool.query('SELECT 1');
  res.json({ status: 'ok', database: 'connected' });
  } catch (error) {
  res.status(500).json({ status: 'error', database: 'disconnected' });

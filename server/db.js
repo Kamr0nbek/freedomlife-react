@@ -33,10 +33,20 @@ export async function initDatabase() {
         password VARCHAR(255) NOT NULL,
         name VARCHAR(255),
         phone VARCHAR(50),
+        weight DECIMAL(5,2),
+        machine_level INTEGER,
         role VARCHAR(20) DEFAULT 'user',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Миграция: добавить колонки если не существуют
+    try {
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS weight DECIMAL(5,2)`);
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS machine_level INTEGER`);
+    } catch (e) {
+      // Колонки уже существуют
+    }
 
     // Таблица абонементов
     await client.query(`
@@ -61,11 +71,21 @@ export async function initDatabase() {
         booking_time TIME NOT NULL,
         machine_level INTEGER DEFAULT 1,
         partner_machine_level INTEGER,
+        is_pair_booking BOOLEAN DEFAULT FALSE,
+        pair_booking_id INTEGER REFERENCES bookings(id),
         status VARCHAR(20) DEFAULT 'scheduled',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Миграция: добавить колонки для 1+1 если не существуют
+    try {
+      await client.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_pair_booking BOOLEAN DEFAULT FALSE`);
+      await client.query(`ALTER TABLE bookings ADD COLUMN IF NOT EXISTS pair_booking_id INTEGER REFERENCES bookings(id)`);
+    } catch (e) {
+      // Колонки уже существуют
+    }
 
     // Таблица промокодов
     await client.query(`

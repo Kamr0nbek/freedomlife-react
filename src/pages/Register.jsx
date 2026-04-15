@@ -9,6 +9,7 @@ export default function Register() {
     name: '',
     email: '',
     phone: '',
+    weight: '',
     password: '',
     confirmPassword: ''
   });
@@ -39,8 +40,15 @@ export default function Register() {
 
     setLoading(true);
 
+    // Проверка веса
+    const weight = parseFloat(formData.weight);
+    if (!weight || weight < 30 || weight > 150) {
+      setError('Укажите вес от 30 до 150 кг');
+      return;
+    }
+
     try {
-      await register(formData.email, formData.password, formData.name, formData.phone);
+      await register(formData.email, formData.password, formData.name, formData.phone, weight);
       navigate('/dashboard');
     } catch (err) {
       setError(err.message);
@@ -100,6 +108,25 @@ export default function Register() {
                   placeholder="+7 707 123 45 67"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Вес (кг) *</label>
+              <div className="relative">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  type="number"
+                  name="weight"
+                  value={formData.weight}
+                  onChange={handleChange}
+                  className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  placeholder="Укажите ваш вес (50-100 кг)"
+                  min="30"
+                  max="150"
+                  required
+                />
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Нужен для определения уровня тренажёра</p>
             </div>
 
             <div>

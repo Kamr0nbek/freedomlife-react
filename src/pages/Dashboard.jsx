@@ -5,7 +5,7 @@ import {
   User, Calendar, CreditCard, Clock, Bell, LogOut, Dumbbell,
   ChevronLeft, ChevronRight, Check, X, Plus, AlertCircle,
   CalendarDays, Timer, Gauge, Edit, Trash2, CheckCircle, XCircle,
-  User as UserIcon, LogOut as LogoutIcon
+  User as UserIcon, LogOut as LogoutIcon, Users, QrCode
 } from 'lucide-react';
 
 // Компонент календаря
@@ -144,30 +144,38 @@ function CalendarPicker({ selectedDate, onSelectDate, minDate, maxDate, disabled
 }
 
 // Компонент карточки уровня
-function LevelCard({ level, selected, onClick, disabled }) {
+function LevelCard({ level, selected, onClick, disabled, userLevel }) {
   const levelInfo = {
-    1: { name: 'Уровень 1', color: 'from-green-400 to-emerald-500' },
-    2: { name: 'Уровень 2', color: 'from-amber-400 to-orange-500' },
-    3: { name: 'Уровень 3', color: 'from-red-400 to-rose-500' }
+    1: { name: 'Уровень 1', color: 'from-green-400 to-emerald-500', weight: '50-65 кг', max: '2 чел./час' },
+    2: { name: 'Уровень 2', color: 'from-amber-400 to-orange-500', weight: '65-85 кг', max: '4 чел./час' },
+    3: { name: 'Уровень 3', color: 'from-red-400 to-rose-500', weight: '85-100 кг', max: '4 чел./час' }
   };
   
   const info = levelInfo[level];
+  const isLocked = userLevel && userLevel !== level;
   
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
+      disabled={disabled || isLocked}
       className={`
         relative overflow-hidden rounded-2xl p-4 text-left transition-all duration-300
         ${selected ? 'ring-2 ring-teal-500 ring-offset-2' : 'hover:shadow-md'}
-        ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
-        bg-gradient-to-br ${info.color}
+        ${disabled || isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+        ${isLocked ? 'bg-gray-200' : `bg-gradient-to-br ${info.color}`}
       `}
     >
       <div className="relative z-10">
         <p className="text-white font-bold text-lg">{info.name}</p>
+        <p className="text-white/80 text-xs mt-1">{info.weight}</p>
+        <p className="text-white/60 text-xs">макс {info.max}</p>
       </div>
       <Gauge className="absolute right-3 bottom-3 w-8 h-8 text-white/30" />
+      {isLocked && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+          <span className="text-white text-xs font-medium">По весу</span>
+        </div>
+      )}
     </button>
   );
 }
@@ -203,7 +211,7 @@ function StatusBadge({ status }) {
     excused: { label: 'Уважительная', bg: 'bg-amber-100', text: 'text-amber-600', icon: AlertCircle },
     error: { label: 'Ошибка', bg: 'bg-gray-100', text: 'text-gray-600', icon: AlertCircle }
   };
-  
+
   const config = statusConfig[status] || statusConfig.scheduled;
   const Icon = config.icon;
   
@@ -216,7 +224,7 @@ function StatusBadge({ status }) {
 }
 
 // Компонент записи
-function BookingCard({ booking, onEdit, onCancel, showActions = true }) {
+function BookingCard({ booking, onEdit, onCancel, onShowQR, showActions = true }) {
   const formatDate = (date) => {
     const d = new Date(date);
     const today = new Date();
@@ -290,6 +298,15 @@ function BookingCard({ booking, onEdit, onCancel, showActions = true }) {
                 <span className="text-xs text-gray-400 px-2 py-1 bg-gray-50 rounded-lg">
                   Изменение недоступно
                 </span>
+              )}
+              {onShowQR && (
+                <button 
+                  onClick={() => onShowQR(booking)}
+                  className="p-2 text-gray-400 hover:text-teal-500 hover:bg-teal-50 rounded-xl transition-colors"
+                  title="Показать QR-код"
+                >
+                  <QrCode className="w-4 h-4" />
+                </button>
               )}
             </div>
           )}
@@ -398,13 +415,21 @@ export default function Dashboard() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   
-  // Форма записи
+  // Форма записи - уровень по умолчанию из профиля пользователя
   const [bookingForm, setBookingForm] = useState({
     booking_date: '',
     booking_time: '',
-    machine_level: 1,
-    partner_machine_level: 1
+    machine_level: null, // будет установлен при загрузке
+    partner_machine_level: 1,
+    book_for_pair: false
   });
+
+  // Установка уровня при загрузке
+  useEffect(() => {
+    if (user?.machine_level && !bookingForm.machine_level) {
+      setBookingForm(prev => ({ ...prev, machine_level: user.machine_level }));
+    }
+  }, [user]);
   const [availableSlots, setAvailableSlots] = useState([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -416,6 +441,11 @@ export default function Dashboard() {
   // Промокод
   const [promoCode, setPromoCode] = useState('');
   const [promoMessage, setPromoMessage] = useState('');
+
+  // QR-код
+  const [qrModalBooking, setQrModalBooking] = useState(null);
+  const [qrCodeData, setQrCodeData] = useState(null);
+  const [qrLoading, setQrLoading] = useState(false);
 
   // Вычисляемые значения
   const upcomingBookings = useMemo(() => {
@@ -466,7 +496,8 @@ export default function Dashboard() {
     if (!date) return;
     setLoadingSlots(true);
     try {
-      const res = await api.get(`/bookings/slots?date=${date}`);
+      const level = bookingForm.machine_level || user?.machine_level || 1;
+      const res = await api.get(`/bookings/slots?date=${date}&machine_level=${level}`);
       if (res.ok) {
         const data = await res.json();
         setAvailableSlots(data.slots);
@@ -496,8 +527,17 @@ export default function Dashboard() {
         return;
       }
       
-      setSuccessMessage('Вы успешно записались на тренировку!');
-      setBookingForm({ booking_date: '', booking_time: '', machine_level: 1, partner_machine_level: 1 });
+      const message = bookingForm.book_for_pair 
+        ? 'Вы успешно записались на тренировку для двоих!' 
+        : 'Вы успешно записались на тренировку!';
+      setSuccessMessage(message);
+      setBookingForm({ 
+        booking_date: '', 
+        booking_time: '', 
+        machine_level: user?.machine_level || 1, 
+        partner_machine_level: 1,
+        book_for_pair: false 
+      });
       setAvailableSlots([]);
       loadData();
     } catch (error) {
@@ -596,13 +636,36 @@ export default function Dashboard() {
   };
 
   const getLastSelectedLevel = () => {
+    // Приоритет: сохранённый в localStorage -> уровень пользователя -> 1
     const saved = localStorage.getItem('lastMachineLevel');
-    return saved ? parseInt(saved) : 1;
+    if (saved) return parseInt(saved);
+    return user?.machine_level || 1;
   };
 
   const handleLevelSelect = (level) => {
     setBookingForm({ ...bookingForm, machine_level: level });
     localStorage.setItem('lastMachineLevel', level);
+  };
+
+  // Загрузка QR-кода для записи
+  const handleShowQR = async (booking) => {
+    setQrModalBooking(booking);
+    setQrLoading(true);
+    try {
+      const res = await api.get(`/bookings/${booking.id}/qr`);
+      if (res.ok) {
+        const data = await res.json();
+        setQrCodeData(data);
+      } else {
+        alert('Ошибка загрузки QR-кода');
+        setQrModalBooking(null);
+      }
+    } catch (error) {
+      alert('Ошибка загрузки QR-кода');
+      setQrModalBooking(null);
+    } finally {
+      setQrLoading(false);
+    }
   };
 
   if (loading) {
@@ -758,9 +821,11 @@ export default function Dashboard() {
               </div>
               <div>
                 <p className="text-lg font-bold text-gray-800">
-                  {getLastSelectedLevel()}
+                  {user?.machine_level ? `Уровень ${user.machine_level}` : '—'}
                 </p>
-                <p className="text-xs text-gray-500">Последний уровень</p>
+                <p className="text-xs text-gray-500">
+                  {user?.weight ? `${user.weight} кг` : 'Без веса'}
+                </p>
               </div>
             </div>
           </div>
@@ -856,25 +921,68 @@ export default function Dashboard() {
                         level={level}
                         selected={bookingForm.machine_level === level}
                         onClick={() => handleLevelSelect(level)}
+                        userLevel={user?.machine_level}
                       />
                     ))}
                   </div>
                 </div>
                 
+                {/* Переключатель 1+1 */}
+                {(subscription?.is_premium_pair || subscription?.sessions_left >= 2) && (
+                  <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl p-4 border border-purple-100">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
+                          <Users className="w-5 h-5 text-purple-600" />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-gray-800">Запись для двоих</p>
+                          <p className="text-xs text-gray-500">Бронируется 2 места, списывается 2 занятия</p>
+                        </div>
+                      </div>
+                      <div 
+                        className={`relative w-12 h-7 rounded-full transition-colors ${
+                          bookingForm.book_for_pair ? 'bg-purple-500' : 'bg-gray-300'
+                        }`}
+                        onClick={() => {
+                          const newValue = !bookingForm.book_for_pair;
+                          setBookingForm({ ...bookingForm, book_for_pair: newValue });
+                        }}
+                      >
+                        <div 
+                          className={`absolute top-1 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                            bookingForm.book_for_pair ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </div>
+                    </label>
+                  </div>
+                )}
+                
                 {/* Кнопка записи */}
                 <button
                   onClick={handleBooking}
-                  disabled={!bookingForm.booking_date || !bookingForm.booking_time || !subscription?.sessions_left || bookingLoading}
+                  disabled={
+                    !bookingForm.booking_date || 
+                    !bookingForm.booking_time || 
+                    !subscription?.sessions_left || 
+                    (bookingForm.book_for_pair && subscription.sessions_left < 2) ||
+                    bookingLoading
+                  }
                   className={`
                     w-full py-4 rounded-2xl font-semibold text-lg transition-all duration-300
                     flex items-center justify-center gap-3
                     ${!subscription?.sessions_left 
                       ? 'bg-gray-200 text-gray-400 cursor-not-allowed' 
-                      : bookingLoading
-                        ? 'bg-teal-600 text-white cursor-wait'
-                        : bookingForm.booking_date && bookingForm.booking_time
-                          ? 'bg-teal-500 hover:bg-teal-600 text-white shadow-lg shadow-teal-500/30 hover:shadow-teal-500/40'
-                          : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                      : bookingForm.book_for_pair && subscription.sessions_left < 2
+                        ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                        : bookingLoading
+                          ? 'bg-teal-600 text-white cursor-wait'
+                          : bookingForm.booking_date && bookingForm.booking_time
+                            ? bookingForm.book_for_pair 
+                              ? 'bg-purple-500 hover:bg-purple-600 text-white shadow-lg shadow-purple-500/30'
+                              : 'bg-teal-500 hover:bg-teal-600 text-white shadow-lg shadow-teal-500/30'
+                            : 'bg-gray-200 text-gray-400 cursor-not-allowed'
                     }
                   `}
                 >
@@ -885,10 +993,12 @@ export default function Dashboard() {
                     </>
                   ) : !subscription?.sessions_left ? (
                     'Нет доступных занятий'
+                  ) : bookingForm.book_for_pair && subscription.sessions_left < 2 ? (
+                    'Нужно 2 занятия для двоих'
                   ) : (
                     <>
                       <Calendar className="w-5 h-5" />
-                      Записаться
+                      {bookingForm.book_for_pair ? 'Записаться вдвоём' : 'Записаться'}
                     </>
                   )}
                 </button>
@@ -924,6 +1034,7 @@ export default function Dashboard() {
                       setEditForm({ booking_time: b.booking_time, machine_level: b.machine_level });
                     }}
                     onCancel={handleCancelBooking}
+                    onShowQR={handleShowQR}
                   />
                 ))}
               </div>
@@ -1101,6 +1212,48 @@ export default function Dashboard() {
               Сохранить
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Модальное окно QR-кода */}
+      <Modal
+        isOpen={!!qrModalBooking}
+        onClose={() => { setQrModalBooking(null); setQrCodeData(null); }}
+        title="QR-код для чекина"
+      >
+        <div className="text-center">
+          {qrLoading ? (
+            <div className="py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-teal-500 mx-auto"></div>
+              <p className="mt-4 text-gray-500">Загрузка...</p>
+            </div>
+          ) : qrCodeData ? (
+            <>
+              <div className="bg-white p-4 rounded-2xl inline-block border-2 border-teal-100">
+                <img 
+                  src={qrCodeData.qr_code} 
+                  alt="QR-код" 
+                  className="w-48 h-48 mx-auto"
+                />
+              </div>
+              <div className="mt-4 p-4 bg-teal-50 rounded-xl">
+                <p className="font-semibold text-gray-800">
+                  {qrCodeData.booking?.user_name}
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  {qrCodeData.booking?.date} в {qrCodeData.booking?.time}
+                </p>
+                <p className="text-sm text-gray-600">
+                  Уровень {qrCodeData.booking?.level}
+                </p>
+              </div>
+              <p className="text-xs text-gray-400 mt-4">
+                Покажите этот QR-код администратору для отметки о посещении
+              </p>
+            </>
+          ) : (
+            <p className="text-gray-500">Не удалось загрузить QR-код</p>
+          )}
         </div>
       </Modal>
 

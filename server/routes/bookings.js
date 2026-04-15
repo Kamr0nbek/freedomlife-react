@@ -6,7 +6,9 @@ import {
   cancelBooking,
   getAllBookings,
   updateBookingStatus,
-  getAvailableSlots
+  getAvailableSlots,
+  getBookingQR,
+  scanQRCode
 } from '../controllers/bookingController.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 
@@ -18,9 +20,11 @@ router.post('/', authenticate, createBooking);
 router.put('/:id', authenticate, updateBooking);
 router.delete('/:id', authenticate, cancelBooking);
 router.get('/slots', authenticate, getAvailableSlots);
+router.get('/:id/qr', authenticate, getBookingQR);
 
 // Админ роуты
 router.get('/all', authenticate, requireAdmin, getAllBookings);
 router.put('/:id/status', authenticate, requireAdmin, updateBookingStatus);
+router.post('/scan-qr', authenticate, requireAdmin, scanQRCode);
 
 export default router;

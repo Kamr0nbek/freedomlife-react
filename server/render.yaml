@@ -9,10 +9,10 @@ services:
       - key: PORT
         value: 3000
       - key: JWT_SECRET
-        value: freedomlife_jwt_secret_key_2024
+        value: freedomlife_secret_key_2024_dev_CHANGE_THIS_IN_PRODUCTION
       - key: DATABASE_URL
-        sync: false
+        value: postgresql://neondb_owner:npg_IvLNiXZJxD45@ep-twilight-silence-abvk4pjt-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require
       - key: TELEGRAM_TOKEN
-        sync: false
+        value: 8398511660:AAGL4rbX5ZpuooRHD8jC6N1XhDJybWAvsn0
       - key: TELEGRAM_CHAT_ID
-        sync: false
+        value: 1340893129

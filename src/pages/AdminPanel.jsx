@@ -4,7 +4,8 @@ import { motion } from 'framer-motion';
 import { 
   Users, Calendar, CreditCard, BarChart3, Plus, Check, X, 
   Clock, AlertCircle, LogOut, Bell, ChevronDown, Tag, 
-  Trash2, MoreVertical, CalendarDays
+  Trash2, MoreVertical, CalendarDays, Search, Download, 
+  TrendingUp, TrendingDown, QrCode, Camera, CheckCircle
 } from 'lucide-react';
 
 // Конфигурация статусов записей
@@ -46,6 +47,13 @@ export default function AdminPanel() {
   });
   const [subForm, setSubForm] = useState({ user_id: '', sessions_change: 0, end_date: '' });
   const [filterDate, setFilterDate] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+
+  // QR Сканер
+  const [qrInput, setQrInput] = useState('');
+  const [scanResult, setScanResult] = useState(null);
+  const [scanLoading, setScanLoading] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -180,6 +188,85 @@ export default function AdminPanel() {
     }
   };
 
+  // Экспорт в CSV
+  const exportToCSV = (data, filename) => {
+    if (!data || data.length === 0) return;
+    
+    const headers = Object.keys(data[0]);
+    const csvContent = [
+      headers.join(','),
+      ...data.map(row => 
+        headers.map(header => {
+          const value = row[header];
+          // Экранируем запятые и кавычки
+          if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value || '';
+        }).join(',')
+      )
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
+  const handleExportBookings = () => {
+    const exportData = bookings.map(b => ({
+      ID: b.id,
+      Клиент: b.user_name || '',
+      Телефон: b.user_phone || '',
+      Email: b.user_email || '',
+      Дата: b.booking_date,
+      Время: b.booking_time?.substring(0, 5),
+      Уровень: b.machine_level,
+      Статус: STATUS_CONFIG[b.status]?.label || b.status
+    }));
+    exportToCSV(exportData, 'bookings');
+  };
+
+  const handleExportUsers = () => {
+    const exportData = users.map(u => ({
+      ID: u.id,
+      Имя: u.name || '',
+      Email: u.email,
+      Телефон: u.phone || '',
+      Вес: u.weight || '',
+      Уровень: u.machine_level || '',
+      Занятий: u.sessions_left || 0,
+      Срок: u.end_date || 'Без срока'
+    }));
+    exportToCSV(exportData, 'users');
+  };
+
+  // Сканирование QR-кода
+  const handleScanQR = async (e) => {
+    e.preventDefault();
+    if (!qrInput.trim()) return;
+    
+    setScanLoading(true);
+    setScanResult(null);
+    
+    try {
+      const res = await api.post('/bookings/scan-qr', { qr_data: qrInput });
+      const data = await res.json();
+      
+      if (res.ok) {
+        setScanResult({ success: true, data });
+        loadData(); // Обновить данные
+      } else {
+        setScanResult({ success: false, error: data.error || 'Ошибка сканирования' });
+      }
+    } catch (error) {
+      setScanResult({ success: false, error: 'Ошибка соединения' });
+    } finally {
+      setScanLoading(false);
+    }
+  };
+
   const formatDate = (date) => {
     return new Date(date).toLocaleDateString('ru-RU');
   };
@@ -216,7 +303,7 @@ export default function AdminPanel() {
       {stats && (
         <div className="bg-gradient-to-r from-teal-500 to-teal-600 text-white">
           <div className="max-w-7xl mx-auto px-4 py-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
               <div className="text-center">
                 <p className="text-3xl font-bold">{stats.users}</p>
                 <p className="text-teal-100">Пользователей</p>
@@ -234,6 +321,33 @@ export default function AdminPanel() {
                 <p className="text-teal-100">Всего занятий</p>
               </div>
             </div>
+            {/* Расширенная статистика */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-teal-400">
+              <div className="text-center">
+                <p className="text-2xl font-bold">{stats.bookings_this_week || 0}</p>
+                <p className="text-teal-200 text-sm">Записей за неделю</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold">{stats.completed_this_month || 0}</p>
+                <p className="text-teal-200 text-sm">Посещений за месяц</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold">{stats.cancelled_this_month || 0}</p>
+                <p className="text-teal-200 text-sm">Отменено</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold">{stats.no_shows_this_month || 0}</p>
+                <p className="text-teal-200 text-sm">Не пришли</p>
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold">
+                  {stats.completed_this_month && stats.no_shows_this_month 
+                    ? Math.round((stats.completed_this_month / (stats.completed_this_month + stats.no_shows_this_month)) * 100)
+                    : 0}%
+                </p>
+                <p className="text-teal-200 text-sm">Посещаемость</p>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -244,6 +358,7 @@ export default function AdminPanel() {
           {[
             { id: 'bookings', label: 'Записи', icon: Calendar },
             { id: 'users', label: 'Пользователи', icon: Users },
+            { id: 'scanner', label: 'Сканер QR', icon: QrCode },
             { id: 'promo', label: 'Промокоды', icon: CreditCard },
             { id: 'subscription', label: 'Абонементы', icon: CreditCard }
           ].map(tab => (
@@ -287,9 +402,16 @@ export default function AdminPanel() {
                       </button>
                     )}
                   </div>
+                  <button
+                    onClick={handleExportBookings}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-teal-50 text-teal-600 rounded-xl text-sm hover:bg-teal-100 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Экспорт
+                  </button>
                 </div>
               </div>
-              
+
               {/* Таблица */}
               {bookings.length === 0 ? (
                 <div className="p-12 text-center">
@@ -453,38 +575,188 @@ export default function AdminPanel() {
         {activeTab === 'users' && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <div className="bg-white rounded-2xl p-6 shadow-sm">
-              <h2 className="text-xl font-bold mb-4">Пользователи</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                <h2 className="text-xl font-bold">Пользователи</h2>
+                
+                <div className="flex items-center gap-3">
+                  {/* Поиск по номеру телефона */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Поиск по телефону или имени..."
+                      className="pl-10 pr-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none w-64"
+                    />
+                    {searchQuery && (
+                      <button
+                        onClick={() => setSearchQuery('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  
+                  <button
+                    onClick={handleExportUsers}
+                    className="flex items-center gap-2 px-4 py-2.5 bg-teal-50 text-teal-600 rounded-xl text-sm hover:bg-teal-100 transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Экспорт
+                  </button>
+                </div>
+              </div>
+
+              {/* Фильтрованные пользователи */}
+              {(() => {
+                const filteredUsers = users.filter(u => {
+                  if (!searchQuery) return true;
+                  const query = searchQuery.toLowerCase();
+                  return (
+                    (u.name && u.name.toLowerCase().includes(query)) ||
+                    (u.phone && u.phone.toLowerCase().includes(query)) ||
+                    u.email.toLowerCase().includes(query)
+                  );
+                });
+
+                if (filteredUsers.length === 0) {
+                  return (
+                    <div className="text-center py-8">
+                      {searchQuery ? (
+                        <p className="text-gray-500">По запросу "{searchQuery}" ничего не найдено</p>
+                      ) : (
+                        <p className="text-gray-500">Нет пользователей</p>
+                      )}
+                    </div>
+                  );
+                }
+
+                return (
+                  <>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">ID</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Имя</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Телефон</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Вес</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Уровень</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Занятий</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Срок</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredUsers.map(u => (
+                            <tr key={u.id} className="border-t border-gray-100 hover:bg-gray-50">
+                              <td className="px-4 py-3">{u.id}</td>
+                              <td className="px-4 py-3">
+                                <div>
+                                  <p className="font-medium">{u.name || '-'}</p>
+                                  <p className="text-xs text-gray-500">{u.email}</p>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                {u.phone ? (
+                                  <a href={`tel:${u.phone}`} className="text-teal-600 hover:underline">
+                                    {u.phone}
+                                  </a>
+                                ) : '-'}
+                              </td>
+                              <td className="px-4 py-3">{u.weight ? `${u.weight} кг` : '-'}</td>
+                              <td className="px-4 py-3">
+                                {u.machine_level ? (
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                    u.machine_level === 1 ? 'bg-green-100 text-green-700' :
+                                    u.machine_level === 2 ? 'bg-amber-100 text-amber-700' :
+                                    'bg-red-100 text-red-700'
+                                  }`}>
+                                    Уровень {u.machine_level}
+                                  </span>
+                                ) : '-'}
+                              </td>
+                              <td className="px-4 py-3 font-medium text-teal-600">{u.sessions_left || 0}</td>
+                              <td className="px-4 py-3">
+                                {u.end_date ? formatDate(u.end_date) : 'Без срока'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-4 text-sm text-gray-500">
+                      Показано {filteredUsers.length} из {users.length} пользователей
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Сканер QR-кодов */}
+        {activeTab === 'scanner' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <h2 className="text-xl font-bold mb-4">Сканирование QR-кода</h2>
+              <p className="text-gray-500 mb-6">Введите данные QR-кода для отметки посещения</p>
               
-              {users.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">Нет пользователей</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">ID</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Имя</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Email</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Телефон</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Занятий</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold">Срок</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {users.map(u => (
-                        <tr key={u.id} className="border-t border-gray-100">
-                          <td className="px-4 py-3">{u.id}</td>
-                          <td className="px-4 py-3">{u.name || '-'}</td>
-                          <td className="px-4 py-3">{u.email}</td>
-                          <td className="px-4 py-3">{u.phone || '-'}</td>
-                          <td className="px-4 py-3 font-medium text-teal-600">{u.sessions_left || 0}</td>
-                          <td className="px-4 py-3">
-                            {u.end_date ? formatDate(u.end_date) : 'Без срока'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <form onSubmit={handleScanQR} className="max-w-lg">
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Данные QR-кода</label>
+                  <textarea
+                    value={qrInput}
+                    onChange={(e) => setQrInput(e.target.value)}
+                    placeholder='{"booking_id":1,"user_id":1,"date":"2024-01-15","time":"10:00",...}'
+                    className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none font-mono text-sm h-32"
+                  />
+                </div>
+                
+                <button
+                  type="submit"
+                  disabled={scanLoading || !qrInput.trim()}
+                  className="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {scanLoading ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                      Проверка...
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="w-5 h-5" />
+                      Проверить QR-код
+                    </>
+                  )}
+                </button>
+              </form>
+
+              {scanResult && (
+                <div className={`mt-6 p-4 rounded-xl ${scanResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                  {scanResult.success ? (
+                    <div className="flex items-start gap-3">
+                      <CheckCircle className="w-6 h-6 text-green-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-green-800">Чек-ин выполнен!</p>
+                        <p className="text-sm text-green-700 mt-1">
+                          {scanResult.data.booking.user_name} - {scanResult.data.booking.date} в {scanResult.data.booking.time}
+                        </p>
+                        <p className="text-sm text-green-600">
+                          Списано занятий: {scanResult.data.booking.sessions_deducted}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-semibold text-red-800">Ошибка</p>
+                        <p className="text-sm text-red-700 mt-1">{scanResult.error}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
