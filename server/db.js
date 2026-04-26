@@ -1,5 +1,6 @@
 import pg from 'pg';
 import dotenv from 'dotenv';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
@@ -10,6 +11,18 @@ export const pool = new Pool({
  connectionString: process.env.DATABASE_URL,
  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
 });
+
+// Инициализация клиента Supabase
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+export const supabase = supabaseUrl && supabaseAnonKey 
+  ? createClient(supabaseUrl, supabaseAnonKey) 
+  : null;
+
+if (supabase) {
+  console.log('Supabase Client инициализирован');
+}
 
 // Тест подключения
 pool.on('connect', () => {
@@ -44,6 +57,7 @@ export async function initDatabase() {
     try {
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS weight DECIMAL(5,2)`);
       await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS machine_level INTEGER`);
+      await client.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_temp BOOLEAN DEFAULT FALSE`);
     } catch (e) {
       // Колонки уже существуют
     }
@@ -158,9 +172,17 @@ export async function initDatabase() {
         new_sessions INTEGER,
         old_end_date DATE,
         new_end_date DATE,
+        subscription_type VARCHAR(50),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Миграция: добавить колонки для истории
+    try {
+      await client.query(`ALTER TABLE subscription_history ADD COLUMN IF NOT EXISTS subscription_type VARCHAR(50)`);
+    } catch (e) {
+      // Колонки уже существуют
+    }
 
     console.log('База данных инициализирована');
   } catch (error) {

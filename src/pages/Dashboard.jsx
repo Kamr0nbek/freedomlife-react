@@ -143,16 +143,17 @@ function CalendarPicker({ selectedDate, onSelectDate, minDate, maxDate, disabled
   );
 }
 
-// Компонент карточки уровня
-function LevelCard({ level, selected, onClick, disabled, userLevel }) {
-  const levelInfo = {
-    1: { name: 'Уровень 1', color: 'from-green-400 to-emerald-500', weight: '50-65 кг', max: '2 чел./час' },
-    2: { name: 'Уровень 2', color: 'from-amber-400 to-orange-500', weight: '65-85 кг', max: '4 чел./час' },
-    3: { name: 'Уровень 3', color: 'from-red-400 to-rose-500', weight: '85-100 кг', max: '4 чел./час' }
+// Компонент карточки типа тренажёра
+function MachineTypeCard({ type, selected, onClick, disabled, userType }) {
+  const machineInfo = {
+    1: { name: 'Тренажёр 1', color: 'from-green-400 to-emerald-500', weight: 'до 65 кг', max: '2 чел./час' },
+    2: { name: 'Тренажёр 2', color: 'from-amber-400 to-orange-500', weight: '65-85 кг', max: '4 чел./час' },
+    3: { name: 'Тренажёр 3', color: 'from-red-400 to-rose-500', weight: '85-100 кг', max: '4 чел./час' },
+    4: { name: 'Тренажёр 4', color: 'from-purple-400 to-indigo-500', weight: 'от 100 кг', max: '2 чел./час' }
   };
   
-  const info = levelInfo[level];
-  const isLocked = userLevel && userLevel !== level;
+  const info = machineInfo[type];
+  const isLocked = userType && userType !== type;
   
   return (
     <button
@@ -266,7 +267,7 @@ function BookingCard({ booking, onEdit, onCancel, onShowQR, showActions = true }
               </span>
               <span className="flex items-center gap-1 text-gray-500 text-sm">
                 <Gauge className="w-4 h-4" />
-                Уровень {booking.machine_level}
+                Тренажёр {booking.machine_level}
               </span>
             </div>
           </div>
@@ -441,6 +442,10 @@ export default function Dashboard() {
   // Промокод
   const [promoCode, setPromoCode] = useState('');
   const [promoMessage, setPromoMessage] = useState('');
+  
+  // 1+1 Покупка
+  const [showPairModal, setShowPairModal] = useState(false);
+  const [pairEmail, setPairEmail] = useState('');
 
   // QR-код
   const [qrModalBooking, setQrModalBooking] = useState(null);
@@ -821,7 +826,7 @@ export default function Dashboard() {
               </div>
               <div>
                 <p className="text-lg font-bold text-gray-800">
-                  {user?.machine_level ? `Уровень ${user.machine_level}` : '—'}
+                  {user?.machine_level ? `Тренажёр ${user.machine_level}` : '—'}
                 </p>
                 <p className="text-xs text-gray-500">
                   {user?.weight ? `${user.weight} кг` : 'Без веса'}
@@ -911,17 +916,17 @@ export default function Dashboard() {
                   )}
                 </div>
                 
-                {/* Выбор уровня */}
+                {/* Выбор типа тренажёра */}
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Уровень тренажёра</h3>
-                  <div className="grid grid-cols-3 gap-3">
-                    {[1, 2, 3].map(level => (
-                      <LevelCard
-                        key={level}
-                        level={level}
-                        selected={bookingForm.machine_level === level}
-                        onClick={() => handleLevelSelect(level)}
-                        userLevel={user?.machine_level}
+                  <h3 className="text-lg font-semibold text-gray-800 mb-4">Тип тренажёра</h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[1, 2, 3, 4].map(type => (
+                      <MachineTypeCard
+                        key={type}
+                        type={type}
+                        selected={bookingForm.machine_level === type}
+                        onClick={() => handleLevelSelect(type)}
+                        userType={user?.machine_level}
                       />
                     ))}
                   </div>
@@ -1102,19 +1107,24 @@ export default function Dashboard() {
                   { name: 'Старт', sessions: 10, price: 59900, months: 1 },
                   { name: 'Базовый', sessions: 30, price: 149900, months: 3 },
                   { name: 'Оптимальный', sessions: 55, price: 239900, months: 6 },
-                  { name: 'Премиум', sessions: 96, price: 400000, months: 12 }
+                  { name: 'Премиум', sessions: 96, price: 400000, months: 12 },
+                  { name: '1+1', sessions: 96, price: 600000, months: 12 }
                 ].map(tariff => (
                   <button
                     key={tariff.name}
                     onClick={async () => {
-                      const res = await api.post('/subscriptions/purchase', {
-                        sessions: tariff.sessions,
-                        type: tariff.name,
-                        months: tariff.months
-                      });
-                      if (res.ok) {
-                        setSuccessMessage('Абонемент приобретён!');
-                        loadData();
+                      if (tariff.name === '1+1') {
+                        setShowPairModal(true);
+                      } else {
+                        const res = await api.post('/subscriptions/purchase', {
+                          sessions: tariff.sessions,
+                          type: tariff.name,
+                          months: tariff.months
+                        });
+                        if (res.ok) {
+                          setSuccessMessage('Абонемент приобретён!');
+                          loadData();
+                        }
                       }
                     }}
                     disabled={!subscription || subscription.sessions_left > 0}
@@ -1267,6 +1277,79 @@ export default function Dashboard() {
           }}
         />
       )}
+
+      {/* Модалка 1+1 Покупки */}
+      <Modal 
+        isOpen={showPairModal} 
+        onClose={() => { setShowPairModal(false); setPairEmail(''); }}
+        title="Абонемент 1+1"
+      >
+        <div className="text-center">
+          <div className="w-16 h-16 bg-teal-50 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Users className="w-8 h-8 text-teal-500" />
+          </div>
+          <p className="text-gray-600 mb-6 font-medium">Вы получите 2 аккаунта с абонементом.</p>
+          
+          <div className="mb-6 text-left">
+            <label className="block text-sm font-medium text-gray-700 mb-2">Email второго человека (необязательно)</label>
+            <input
+              type="email"
+              value={pairEmail}
+              onChange={(e) => setPairEmail(e.target.value)}
+              placeholder="friend@example.com"
+              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none"
+            />
+          </div>
+
+          <div className="flex flex-col sm:flex-row justify-center gap-3">
+            <button
+              onClick={async () => {
+                const res = await api.post('/subscriptions/purchase', {
+                  sessions: 96,
+                  type: '1+1',
+                  months: 12,
+                  partner_email: pairEmail || null
+                });
+                if (res.ok) {
+                  setShowPairModal(false);
+                  setPairEmail('');
+                  setSuccessMessage('Абонемент 1+1 успешно приобретён!');
+                  loadData();
+                } else {
+                  const data = await res.json();
+                  alert(data.error || 'Ошибка покупки');
+                }
+              }}
+              className="px-6 py-3 bg-teal-500 hover:bg-teal-600 text-white rounded-xl font-medium transition-colors"
+            >
+              Купить
+            </button>
+            <button
+              onClick={async () => {
+                const res = await api.post('/subscriptions/purchase', {
+                  sessions: 96,
+                  type: '1+1',
+                  months: 12,
+                  partner_email: null
+                });
+                if (res.ok) {
+                  setShowPairModal(false);
+                  setPairEmail('');
+                  setSuccessMessage('Абонемент 1+1 успешно приобретён!');
+                  loadData();
+                } else {
+                  const data = await res.json();
+                  alert(data.error || 'Ошибка покупки');
+                }
+              }}
+              className="px-6 py-3 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl font-medium transition-colors"
+            >
+              Создать позже
+            </button>
+          </div>
+        </div>
+      </Modal>
+
     </div>
   );
 }

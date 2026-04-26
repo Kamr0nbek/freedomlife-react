@@ -1,4 +1,5 @@
 import pool from '../db.js';
+import bcrypt from 'bcryptjs';
 
 // Получение абонемента пользователя
 export async function getSubscription(req, res) {
@@ -21,7 +22,7 @@ export async function getSubscription(req, res) {
 
 // Покупка абонемента
 export async function purchaseSubscription(req, res) {
-  const { sessions, type, months, is_premium_pair } = req.body;
+  const { sessions, type, months, is_premium_pair, partner_email } = req.body;
 
   if (!sessions || !type) {
     return res.status(400).json({ error: 'Укажите количество занятий и тип абонемента' });
@@ -73,15 +74,22 @@ export async function purchaseSubscription(req, res) {
       // Записываем в историю
       await pool.query(
         `INSERT INTO subscription_history 
-         (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date)
-         VALUES ($1, 'purchase', $2, $3, $4, $5, $6)`,
-        [req.user.id, sessions, oldSessions, oldSessions + sessions, oldEndDate, endDate]
+         (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
+         VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7)`,
+        [req.user.id, sessions, oldSessions, oldSessions + sessions, oldEndDate, endDate, type]
       );
     } else {
       await pool.query(
         `INSERT INTO subscriptions (user_id, sessions_left, end_date, type, is_premium_pair)
          VALUES ($1, $2, $3, $4, $5)`,
         [req.user.id, newSessions, endDate, type, is_premium_pair || false]
+      );
+      
+      await pool.query(
+        `INSERT INTO subscription_history 
+         (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
+         VALUES ($1, 'purchase', $2, 0, $2, NULL, $3, $4)`,
+        [req.user.id, sessions, endDate, type]
       );
     }
 
@@ -91,6 +99,79 @@ export async function purchaseSubscription(req, res) {
        VALUES ($1, $2, $3)`,
       [req.user.id, 'Абонемент приобретён', `Вы приобрели абонемент: ${sessions} занятий, тип: ${type}`]
     );
+    
+    // Логика для 1+1: создание второго пользователя и выдача ему абонемента
+    if (type === '1+1') {
+      let partnerUserId = null;
+      let targetEmail = partner_email;
+
+      if (targetEmail) {
+        // Проверяем, есть ли пользователь с таким email
+        const userRes = await pool.query('SELECT id FROM users WHERE email = $1', [targetEmail]);
+        if (userRes.rows.length > 0) {
+          partnerUserId = userRes.rows[0].id;
+        }
+      }
+
+      if (!partnerUserId) {
+        // Создаем пользователя (либо временного, либо с указанным email)
+        const newEmail = targetEmail || `temp_${Date.now()}@freedomlife.com`;
+        const randomPassword = Math.random().toString(36).slice(-8);
+        const hashedPassword = await bcrypt.hash(randomPassword, 10);
+        
+        const newUserRes = await pool.query(
+          `INSERT INTO users (email, password, is_temp, name) 
+           VALUES ($1, $2, $3, $4) RETURNING id`,
+          [newEmail, hashedPassword, !targetEmail, targetEmail ? 'Партнер' : 'Временный аккаунт']
+        );
+        partnerUserId = newUserRes.rows[0].id;
+      }
+
+      // Выдаем 1+1 абонемент второму пользователю
+      const partnerSubRes = await pool.query('SELECT sessions_left, end_date FROM subscriptions WHERE user_id = $1', [partnerUserId]);
+      
+      if (partnerSubRes.rows.length > 0) {
+        const oldSessionsPartner = partnerSubRes.rows[0].sessions_left || 0;
+        const oldEndDatePartner = partnerSubRes.rows[0].end_date;
+        
+        await pool.query(
+          `UPDATE subscriptions 
+           SET sessions_left = sessions_left + $1, 
+               end_date = COALESCE($2, end_date),
+               type = $3,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = $4`,
+          [newSessions, endDate, type, partnerUserId]
+        );
+
+        await pool.query(
+          `INSERT INTO subscription_history 
+           (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
+           VALUES ($1, 'gift', $2, $3, $4, $5, $6, $7)`,
+          [partnerUserId, sessions, oldSessionsPartner, oldSessionsPartner + sessions, oldEndDatePartner, endDate, type]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO subscriptions (user_id, sessions_left, end_date, type)
+           VALUES ($1, $2, $3, $4)`,
+          [partnerUserId, newSessions, endDate, type]
+        );
+        
+        await pool.query(
+          `INSERT INTO subscription_history 
+           (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
+           VALUES ($1, 'gift', $2, 0, $2, NULL, $3, $4)`,
+          [partnerUserId, sessions, endDate, type]
+        );
+      }
+
+      // Уведомление второму пользователю
+      await pool.query(
+        `INSERT INTO notifications (user_id, title, message) 
+         VALUES ($1, $2, $3)`,
+        [partnerUserId, 'Вам подарен абонемент!', `Вам начислен абонемент 1+1: ${sessions} занятий.`]
+      );
+    }
 
     const updated = await pool.query('SELECT * FROM subscriptions WHERE user_id = $1', [req.user.id]);
 

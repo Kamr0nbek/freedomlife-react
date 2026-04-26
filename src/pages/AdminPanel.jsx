@@ -7,6 +7,7 @@ import {
   Trash2, MoreVertical, CalendarDays, Search, Download, 
   TrendingUp, TrendingDown, QrCode, Camera, CheckCircle
 } from 'lucide-react';
+import AdminSchedule from '../components/AdminSchedule';
 
 // Конфигурация статусов записей
 const STATUS_CONFIG = {
@@ -54,10 +55,31 @@ export default function AdminPanel() {
   const [qrInput, setQrInput] = useState('');
   const [scanResult, setScanResult] = useState(null);
   const [scanLoading, setScanLoading] = useState(false);
+  
+  // Статистика выручки
+  const [revenueStats, setRevenueStats] = useState(null);
+  const [revenueFilter, setRevenueFilter] = useState('month');
 
   useEffect(() => {
     loadData();
   }, [filterDate]);
+
+  useEffect(() => {
+    if (activeTab === 'statistics') {
+      loadRevenueStats();
+    }
+  }, [activeTab, revenueFilter]);
+
+  const loadRevenueStats = async () => {
+    try {
+      const res = await api.get(`/admin/revenue-stats?filter=${revenueFilter}`);
+      if (res.ok) {
+        setRevenueStats(await res.json());
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки статистики:', error);
+    }
+  };
 
   // Загрузка промокодов при переходе на вкладку
   useEffect(() => {
@@ -222,8 +244,8 @@ export default function AdminPanel() {
       Email: b.user_email || '',
       Дата: b.booking_date,
       Время: b.booking_time?.substring(0, 5),
-      Уровень: b.machine_level,
-      Статус: STATUS_CONFIG[b.status]?.label || b.status
+      Тренажёр: b.machine_level,
+      Статус: (STATUS_CONFIG[b.status] || STATUS_CONFIG.scheduled).label
     }));
     exportToCSV(exportData, 'bookings');
   };
@@ -235,7 +257,7 @@ export default function AdminPanel() {
       Email: u.email,
       Телефон: u.phone || '',
       Вес: u.weight || '',
-      Уровень: u.machine_level || '',
+      Тренажёр: u.machine_level || '',
       Занятий: u.sessions_left || 0,
       Срок: u.end_date || 'Без срока'
     }));
@@ -360,7 +382,8 @@ export default function AdminPanel() {
             { id: 'users', label: 'Пользователи', icon: Users },
             { id: 'scanner', label: 'Сканер QR', icon: QrCode },
             { id: 'promo', label: 'Промокоды', icon: CreditCard },
-            { id: 'subscription', label: 'Абонементы', icon: CreditCard }
+            { id: 'subscription', label: 'Абонементы', icon: CreditCard },
+            { id: 'statistics', label: 'Статистика', icon: BarChart3 }
           ].map(tab => (
             <button
               key={tab.id}
@@ -379,195 +402,17 @@ export default function AdminPanel() {
 
         {/* Записи */}
         {activeTab === 'bookings' && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-              {/* Заголовок с фильтром */}
-              <div className="p-5 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                <h2 className="text-xl font-bold text-gray-800">Все записи</h2>
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-gray-500">Фильтр по дате:</span>
-                  <div className="relative">
-                    <input
-                      type="date"
-                      value={filterDate}
-                      onChange={(e) => setFilterDate(e.target.value)}
-                      className="pl-4 pr-10 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none bg-gray-50 hover:bg-white transition-colors"
-                    />
-                    {filterDate && (
-                      <button
-                        onClick={() => setFilterDate('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    onClick={handleExportBookings}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-teal-50 text-teal-600 rounded-xl text-sm hover:bg-teal-100 transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                    Экспорт
-                  </button>
-                </div>
-              </div>
-
-              {/* Таблица */}
-              {bookings.length === 0 ? (
-                <div className="p-12 text-center">
-                  <CalendarDays className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                  <p className="text-gray-500">Нет записей</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[800px]">
-                    <thead>
-                      <tr className="bg-gray-50/80">
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Клиент</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Дата</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Время</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Тренажёр</th>
-                        <th className="px-5 py-4 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Статус</th>
-                        <th className="px-5 py-4 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">Действия</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {bookings.map(booking => {
-                        const statusConfig = STATUS_CONFIG[booking.status] || STATUS_CONFIG.scheduled;
-                        const StatusIcon = statusConfig.icon;
-                        
-                        return (
-                          <tr 
-                            key={booking.id} 
-                            className="hover:bg-gray-50/50 transition-colors group"
-                          >
-                            {/* Клиент */}
-                            <td className="px-5 py-4">
-                              <div className="flex flex-col">
-                                <span className="font-medium text-gray-900">{booking.user_name || 'Неизвестно'}</span>
-                                <span className="text-sm text-gray-500">{booking.user_phone || booking.user_email || '-'}</span>
-                              </div>
-                            </td>
-                            
-                            {/* Дата */}
-                            <td className="px-5 py-4 whitespace-nowrap">
-                              <span className="text-sm text-gray-700">
-                                {new Date(booking.booking_date).toLocaleDateString('ru-RU', { 
-                                  day: 'numeric', 
-                                  month: 'short',
-                                  year: 'numeric'
-                                })}
-                              </span>
-                            </td>
-                            
-                            {/* Время */}
-                            <td className="px-5 py-4 whitespace-nowrap">
-                              <span className="text-sm font-medium text-gray-900">
-                                {booking.booking_time?.substring(0, 5) || '-'}
-                              </span>
-                            </td>
-                            
-                            {/* Тренажёр */}
-                            <td className="px-5 py-4">
-                              <div className="flex flex-col">
-                                <span className="text-sm text-gray-700">
-                                  <span className="font-medium">Уровень {booking.machine_level}</span>
-                                </span>
-                                {booking.partner_machine_level && (
-                                  <span className="text-xs text-gray-500">
-                                    + Партнёр: ур. {booking.partner_machine_level}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                            
-                            {/* Статус */}
-                            <td className="px-5 py-4 whitespace-nowrap">
-                              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium ${statusConfig.color}`}>
-                                <StatusIcon className="w-3.5 h-3.5" />
-                                {statusConfig.label}
-                              </span>
-                            </td>
-                            
-                            {/* Действия */}
-                            <td className="px-5 py-4 whitespace-nowrap text-right">
-                              <div className="relative inline-block">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    toggleActionsMenu(booking.id);
-                                  }}
-                                  className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
-                                >
-                                  <MoreVertical className="w-5 h-5" />
-                                </button>
-                                
-                                {/* Dropdown меню */}
-                                {openActionsMenu === booking.id && (
-                                  <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-20">
-                                    <div className="px-3 py-2 border-b border-gray-100">
-                                      <span className="text-xs font-medium text-gray-500 uppercase">Изменить статус</span>
-                                    </div>
-                                    
-                                    <button
-                                      onClick={() => { handleStatusChange(booking.id, 'attended'); setOpenActionsMenu(null); }}
-                                      className="w-full px-3 py-2.5 text-left text-sm text-green-700 hover:bg-green-50 flex items-center gap-2"
-                                    >
-                                      <Check className="w-4 h-4" />
-                                      Пришёл
-                                    </button>
-                                    <button
-                                      onClick={() => { handleStatusChange(booking.id, 'no_show'); setOpenActionsMenu(null); }}
-                                      className="w-full px-3 py-2.5 text-left text-sm text-red-700 hover:bg-red-50 flex items-center gap-2"
-                                    >
-                                      <X className="w-4 h-4" />
-                                      Не пришёл
-                                    </button>
-                                    <button
-                                      onClick={() => { handleStatusChange(booking.id, 'excused'); setOpenActionsMenu(null); }}
-                                      className="w-full px-3 py-2.5 text-left text-sm text-amber-700 hover:bg-amber-50 flex items-center gap-2"
-                                    >
-                                      <AlertCircle className="w-4 h-4" />
-                                      Уважительная причина
-                                    </button>
-                                    <button
-                                      onClick={() => { handleStatusChange(booking.id, 'client_error'); setOpenActionsMenu(null); }}
-                                      className="w-full px-3 py-2.5 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                    >
-                                      <Clock className="w-4 h-4" />
-                                      Ошибка клиента
-                                    </button>
-                                    
-                                    <div className="border-t border-gray-100 mt-1 pt-1">
-                                      <button
-                                        onClick={() => { handleDeleteBooking(booking.id); setOpenActionsMenu(null); }}
-                                        className="w-full px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                        Удалить запись
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              
-              {/* Footer с количеством */}
-              {bookings.length > 0 && (
-                <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50">
-                  <span className="text-sm text-gray-500">
-                    Всего записей: <span className="font-medium text-gray-700">{bookings.length}</span>
-                  </span>
-                </div>
-              )}
-            </div>
+          <motion.div 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }}
+            className="h-[calc(100vh-280px)] min-h-[600px]"
+          >
+            <AdminSchedule 
+              sessions={bookings}
+              onStatusChange={handleStatusChange}
+              onDelete={handleDeleteBooking}
+              onAdd={() => setActiveTab('scanner')} // Example: redirect to scanner or open modal
+            />
           </motion.div>
         )}
 
@@ -643,7 +488,7 @@ export default function AdminPanel() {
                             <th className="px-4 py-3 text-left text-sm font-semibold">Имя</th>
                             <th className="px-4 py-3 text-left text-sm font-semibold">Телефон</th>
                             <th className="px-4 py-3 text-left text-sm font-semibold">Вес</th>
-                            <th className="px-4 py-3 text-left text-sm font-semibold">Уровень</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Тренажёр</th>
                             <th className="px-4 py-3 text-left text-sm font-semibold">Занятий</th>
                             <th className="px-4 py-3 text-left text-sm font-semibold">Срок</th>
                           </tr>
@@ -673,7 +518,7 @@ export default function AdminPanel() {
                                     u.machine_level === 2 ? 'bg-amber-100 text-amber-700' :
                                     'bg-red-100 text-red-700'
                                   }`}>
-                                    Уровень {u.machine_level}
+                                    Тренажёр {u.machine_level}
                                   </span>
                                 ) : '-'}
                               </td>
@@ -949,6 +794,88 @@ export default function AdminPanel() {
                   Обновить
                 </button>
               </form>
+            </div>
+          </motion.div>
+        )}
+
+        {/* Статистика */}
+        {activeTab === 'statistics' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div className="bg-white rounded-2xl p-6 shadow-sm mb-6">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-bold">Финансовая статистика</h2>
+                <div className="flex gap-2">
+                  {['day', 'week', 'month'].map(f => (
+                    <button
+                      key={f}
+                      onClick={() => setRevenueFilter(f)}
+                      className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
+                        revenueFilter === f ? 'bg-teal-500 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {f === 'day' ? 'День' : f === 'week' ? 'Неделя' : 'Месяц'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {revenueStats ? (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                    <div className="p-4 bg-teal-50 rounded-xl">
+                      <p className="text-teal-800 text-sm font-medium mb-1">Общая выручка</p>
+                      <p className="text-2xl font-bold text-teal-900">{revenueStats.totalRevenue.toLocaleString()} ₸</p>
+                    </div>
+                    <div className="p-4 bg-blue-50 rounded-xl">
+                      <p className="text-blue-800 text-sm font-medium mb-1">Количество продаж</p>
+                      <p className="text-2xl font-bold text-blue-900">{revenueStats.totalSales}</p>
+                    </div>
+                    <div className="p-4 bg-purple-50 rounded-xl">
+                      <p className="text-purple-800 text-sm font-medium mb-1">Новые регистрации</p>
+                      <p className="text-2xl font-bold text-purple-900">{revenueStats.newRegistrations}</p>
+                    </div>
+                    <div className="p-4 bg-amber-50 rounded-xl">
+                      <p className="text-amber-800 text-sm font-medium mb-1">Средний чек</p>
+                      <p className="text-2xl font-bold text-amber-900">{revenueStats.averageCheck.toLocaleString()} ₸</p>
+                    </div>
+                  </div>
+
+                  <h3 className="text-lg font-semibold mb-4">Выручка по дням</h3>
+                  <div className="h-64 flex items-end gap-2 px-4 py-6 border border-gray-100 rounded-xl bg-gray-50 overflow-x-auto">
+                    {revenueStats.chartData.length > 0 ? (
+                      revenueStats.chartData.map((d, i) => {
+                        const maxRevenue = Math.max(...revenueStats.chartData.map(c => c.revenue));
+                        const heightPercent = maxRevenue > 0 ? (d.revenue / maxRevenue) * 100 : 0;
+                        
+                        return (
+                          <div key={i} className="flex flex-col items-center flex-1 min-w-[40px] group relative">
+                            {/* Туттип (Tooltip) */}
+                            <div className="absolute -top-10 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-800 text-white text-xs py-1 px-2 rounded pointer-events-none whitespace-nowrap z-10">
+                              {d.revenue.toLocaleString()} ₸
+                            </div>
+                            
+                            <div 
+                              className="w-full bg-teal-500 rounded-t-sm hover:bg-teal-400 transition-colors"
+                              style={{ height: \`\${Math.max(heightPercent, 2)}%\` }}
+                            ></div>
+                            <span className="text-[10px] text-gray-500 mt-2 truncate w-full text-center">
+                              {new Date(d.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+                            </span>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-gray-400">
+                        Нет данных за выбранный период
+                      </div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="py-12 flex justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-teal-500"></div>
+                </div>
+              )}
             </div>
           </motion.div>
         )}

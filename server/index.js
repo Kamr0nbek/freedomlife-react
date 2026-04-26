@@ -140,6 +140,83 @@ app.get('/api/admin/stats', async (req, res) => {
   }
 });
 
+// Выручка и статистика продаж
+app.get('/api/admin/revenue-stats', async (req, res) => {
+  const filter = req.query.filter || 'month'; // day, week, month
+  
+  let dateFilter = new Date();
+  if (filter === 'day') {
+    dateFilter.setDate(dateFilter.getDate() - 1);
+  } else if (filter === 'week') {
+    dateFilter.setDate(dateFilter.getDate() - 7);
+  } else {
+    dateFilter.setMonth(dateFilter.getMonth() - 1);
+  }
+  
+  try {
+    const historyRes = await pool.query(
+      `SELECT subscription_type, created_at 
+       FROM subscription_history 
+       WHERE action = 'purchase' AND created_at >= $1
+       ORDER BY created_at ASC`,
+      [dateFilter.toISOString()]
+    );
+    
+    let totalRevenue = 0;
+    let totalSales = 0;
+    const revenueByDate = {};
+    
+    historyRes.rows.forEach(row => {
+      let price = 0;
+      switch(row.subscription_type) {
+        case 'Старт': price = 59900; break;
+        case 'Базовый': price = 149900; break;
+        case 'Оптимальный': price = 239900; break;
+        case 'Премиум': price = 400000; break;
+        case '1+1': price = 600000; break;
+        default: price = 0;
+      }
+      
+      totalRevenue += price;
+      totalSales += 1;
+      
+      const dateStr = row.created_at.toISOString().split('T')[0];
+      if (!revenueByDate[dateStr]) {
+        revenueByDate[dateStr] = 0;
+      }
+      revenueByDate[dateStr] += price;
+    });
+    
+    // Новые регистрации за этот же период (исключаем временные)
+    const newUsersRes = await pool.query(
+      `SELECT COUNT(*) as count 
+       FROM users 
+       WHERE created_at >= $1 AND is_temp = FALSE`,
+      [dateFilter.toISOString()]
+    );
+    const newRegistrations = parseInt(newUsersRes.rows[0].count);
+    
+    const averageCheck = totalSales > 0 ? Math.round(totalRevenue / totalSales) : 0;
+    
+    // Подготовка данных для графика
+    const chartData = Object.keys(revenueByDate).map(date => ({
+      date,
+      revenue: revenueByDate[date]
+    }));
+    
+    res.json({
+      totalRevenue,
+      totalSales,
+      newRegistrations,
+      averageCheck,
+      chartData
+    });
+  } catch (error) {
+    console.error('Ошибка получения статистики выручки:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
 // Проверка БД
 app.get('/api/health', async (req, res) => {
  try {

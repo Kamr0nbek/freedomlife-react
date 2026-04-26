@@ -11,7 +11,11 @@ services:
       - key: JWT_SECRET
         value: freedomlife_secret_key_2024_dev_CHANGE_THIS_IN_PRODUCTION
       - key: DATABASE_URL
-        value: postgresql://neondb_owner:npg_IvLNiXZJxD45@ep-twilight-silence-abvk4pjt-pooler.eu-west-2.aws.neon.tech/neondb?sslmode=require
+        value: postgres://postgres:Kamronbek123%23%24@aws-0-eu-central-1.pooler.supabase.com:6543/postgres
+      - key: SUPABASE_URL
+        value: https://pvkcbtwiiuifjrazyobo.supabase.co
+      - key: SUPABASE_ANON_KEY
+        value: sb_publishable_bCdtw_v59vFPl4fovh0hrg_VwTRmR0I
       - key: TELEGRAM_TOKEN
         value: 8398511660:AAGL4rbX5ZpuooRHD8jC6N1XhDJybWAvsn0
       - key: TELEGRAM_CHAT_ID
