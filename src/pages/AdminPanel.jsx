@@ -856,7 +856,7 @@ export default function AdminPanel() {
                             
                             <div 
                               className="w-full bg-teal-500 rounded-t-sm hover:bg-teal-400 transition-colors"
-                              style={{ height: \`\${Math.max(heightPercent, 2)}%\` }}
+                              style={{ height: `${Math.max(heightPercent, 2)}%` }}
                             ></div>
                             <span className="text-[10px] text-gray-500 mt-2 truncate w-full text-center">
                               {new Date(d.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
