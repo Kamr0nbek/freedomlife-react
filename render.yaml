@@ -3,6 +3,7 @@ services:
     name: freedomlife-server
     env: node
     region: frankfurt
+    rootDir: server
     buildCommand: npm install
     startCommand: npm start
     envVars:
