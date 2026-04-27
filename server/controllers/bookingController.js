@@ -4,7 +4,8 @@ import pool from '../db.js';
 const LEVEL_CONFIG = {
   1: { minWeight: 50, maxWeight: 65, maxPerLevel: 2, machines: 2 },
   2: { minWeight: 65, maxWeight: 85, maxPerLevel: 4, machines: 4 },
-  3: { minWeight: 85, maxWeight: 100, maxPerLevel: 4, machines: 4 }
+  3: { minWeight: 85, maxWeight: 100, maxPerLevel: 4, machines: 4 },
+  4: { minWeight: 100, maxWeight: 999, maxPerLevel: 2, machines: 2 }
 };
 const MAX_TOTAL_PER_HOUR = 10;
 
@@ -14,6 +15,7 @@ function getMachineLevelByWeight(weight) {
   if (weight >= 50 && weight <= 65) return 1;
   if (weight > 65 && weight <= 85) return 2;
   if (weight > 85 && weight <= 100) return 3;
+  if (weight > 100) return 4;
   return null;
 }
 
@@ -511,7 +513,10 @@ export async function getAvailableSlots(req, res) {
         reason = 'full';
       } else if (machine_level) {
         const levelLimit = LEVEL_CONFIG[machine_level];
-        if (levelCounts[machine_level] >= levelLimit.maxPerLevel) {
+        if (levelLimit && levelCounts[machine_level] >= levelLimit.maxPerLevel) {
+          available = false;
+          reason = 'level_full';
+        } else if (!levelLimit && levelCounts[machine_level] >= 2) {
           available = false;
           reason = 'level_full';
         }

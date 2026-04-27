@@ -8,6 +8,7 @@ function getMachineLevelByWeight(weight) {
   if (weight >= 50 && weight <= 65) return 1;
   if (weight > 65 && weight <= 85) return 2;
   if (weight > 85 && weight <= 100) return 3;
+  if (weight > 100) return 4;
   return null;
 }
 
