@@ -406,6 +406,7 @@ export default function Dashboard() {
   
   // Состояния
   const [subscription, setSubscription] = useState(null);
+  const [requests, setRequests] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -477,13 +478,15 @@ export default function Dashboard() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [subRes, bookingsRes, notifRes] = await Promise.all([
+      const [subRes, reqsRes, bookingsRes, notifRes] = await Promise.all([
         api.get('/subscriptions'),
+        api.get('/subscriptions/requests'),
         api.get('/bookings'),
         api.get('/notifications')
       ]);
       
       if (subRes.ok) setSubscription(await subRes.json());
+      if (reqsRes.ok) setRequests(await reqsRes.json());
       if (bookingsRes.ok) setBookings(await bookingsRes.json());
       if (notifRes.ok) {
         const notifData = await notifRes.json();
@@ -1099,6 +1102,29 @@ export default function Dashboard() {
               </div>
             </div>
 
+            {/* Ожидающие запросы */}
+            {requests.length > 0 && (
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 mb-6">
+                <h3 className="text-lg font-semibold text-gray-800 mb-4">Ожидающие запросы</h3>
+                <div className="space-y-3">
+                  {requests.filter(r => r.status === 'pending').map(req => (
+                    <div key={req.id} className="flex items-center justify-between p-4 bg-amber-50 rounded-xl border border-amber-100">
+                      <div>
+                        <p className="font-semibold text-amber-900">{req.type}</p>
+                        <p className="text-sm text-amber-700">{req.sessions} занятий</p>
+                      </div>
+                      <span className="px-3 py-1 bg-amber-200 text-amber-800 rounded-full text-xs font-medium">
+                        Ожидает подтверждения
+                      </span>
+                    </div>
+                  ))}
+                  {requests.filter(r => r.status === 'pending').length === 0 && (
+                    <p className="text-gray-500 text-sm">Нет ожидающих запросов.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Покупка абонемента */}
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
               <h3 className="text-lg font-semibold text-gray-800 mb-4">Купить абонемент</h3>
@@ -1122,7 +1148,8 @@ export default function Dashboard() {
                           months: tariff.months
                         });
                         if (res.ok) {
-                          setSuccessMessage('Абонемент приобретён!');
+                          const data = await res.json();
+                          setSuccessMessage(data.message || 'Запрос отправлен!');
                           loadData();
                         }
                       }
@@ -1311,9 +1338,10 @@ export default function Dashboard() {
                   partner_email: pairEmail || null
                 });
                 if (res.ok) {
+                  const data = await res.json();
                   setShowPairModal(false);
                   setPairEmail('');
-                  setSuccessMessage('Абонемент 1+1 успешно приобретён!');
+                  setSuccessMessage(data.message || 'Запрос отправлен!');
                   loadData();
                 } else {
                   const data = await res.json();
@@ -1333,9 +1361,10 @@ export default function Dashboard() {
                   partner_email: null
                 });
                 if (res.ok) {
+                  const data = await res.json();
                   setShowPairModal(false);
                   setPairEmail('');
-                  setSuccessMessage('Абонемент 1+1 успешно приобретён!');
+                  setSuccessMessage(data.message || 'Запрос отправлен!');
                   loadData();
                 } else {
                   const data = await res.json();

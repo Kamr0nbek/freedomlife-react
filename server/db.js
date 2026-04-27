@@ -63,6 +63,21 @@ export async function initDatabase() {
       )
     `);
 
+    // Таблица запросов на абонементы
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS subscription_requests (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+        sessions INTEGER NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        months INTEGER,
+        partner_email VARCHAR(255),
+        status VARCHAR(20) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Таблица записей на тренировки
     await client.query(`
       CREATE TABLE IF NOT EXISTS bookings (

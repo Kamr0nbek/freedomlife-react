@@ -20,7 +20,7 @@ export async function getSubscription(req, res) {
   }
 }
 
-// Покупка абонемента
+// Покупка абонемента (Создание запроса)
 export async function purchaseSubscription(req, res) {
   const { sessions, type, months, is_premium_pair, partner_email } = req.body;
 
@@ -29,158 +29,18 @@ export async function purchaseSubscription(req, res) {
   }
 
   try {
-    // Проверяем, достаточно ли занятий
-    const currentSub = await pool.query(
-      'SELECT sessions_left, end_date FROM subscriptions WHERE user_id = $1',
-      [req.user.id]
-    );
-
-    let newSessions = sessions;
-    let endDate = null;
-
-    if (months) {
-      const currentDate = new Date();
-      if (currentSub.rows.length > 0 && currentSub.rows[0].end_date) {
-        const currentEnd = new Date(currentSub.rows[0].end_date);
-        if (currentEnd > currentDate) {
-          endDate = new Date(currentEnd);
-          endDate.setMonth(endDate.getMonth() + months);
-        } else {
-          endDate = new Date();
-          endDate.setMonth(endDate.getMonth() + months);
-        }
-      } else {
-        endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + months);
-      }
-    }
-
-    // Обновляем или создаём абонемент
-    if (currentSub.rows.length > 0) {
-      const oldSessions = currentSub.rows[0].sessions_left || 0;
-      const oldEndDate = currentSub.rows[0].end_date;
-      
-      await pool.query(
-        `UPDATE subscriptions 
-         SET sessions_left = sessions_left + $1, 
-             end_date = COALESCE($2, end_date),
-             type = $3,
-             is_premium_pair = COALESCE($4, is_premium_pair),
-             updated_at = CURRENT_TIMESTAMP
-         WHERE user_id = $5`,
-        [newSessions, endDate, type, is_premium_pair || false, req.user.id]
-      );
-
-      // Записываем в историю
-      await pool.query(
-        `INSERT INTO subscription_history 
-         (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
-         VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7)`,
-        [req.user.id, sessions, oldSessions, oldSessions + sessions, oldEndDate, endDate, type]
-      );
-    } else {
-      await pool.query(
-        `INSERT INTO subscriptions (user_id, sessions_left, end_date, type, is_premium_pair)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [req.user.id, newSessions, endDate, type, is_premium_pair || false]
-      );
-      
-      await pool.query(
-        `INSERT INTO subscription_history 
-         (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
-         VALUES ($1, 'purchase', $2, 0, $2, NULL, $3, $4)`,
-        [req.user.id, sessions, endDate, type]
-      );
-    }
-
-    // Создаём уведомление
+    // Создаем запрос на покупку
     await pool.query(
-      `INSERT INTO notifications (user_id, title, message) 
-       VALUES ($1, $2, $3)`,
-      [req.user.id, 'Абонемент приобретён', `Вы приобрели абонемент: ${sessions} занятий, тип: ${type}`]
+      `INSERT INTO subscription_requests (user_id, sessions, type, months, partner_email, status)
+       VALUES ($1, $2, $3, $4, $5, 'pending')`,
+      [req.user.id, sessions, type, months || null, partner_email || null]
     );
-    
-    // Логика для 1+1: создание второго пользователя и выдача ему абонемента
-    if (type === '1+1') {
-      let partnerUserId = null;
-      let targetEmail = partner_email;
-
-      if (targetEmail) {
-        // Проверяем, есть ли пользователь с таким email
-        const userRes = await pool.query('SELECT id FROM users WHERE email = $1', [targetEmail]);
-        if (userRes.rows.length > 0) {
-          partnerUserId = userRes.rows[0].id;
-        }
-      }
-
-      if (!partnerUserId) {
-        // Создаем пользователя (либо временного, либо с указанным email)
-        const newEmail = targetEmail || `temp_${Date.now()}@freedomlife.com`;
-        const randomPassword = Math.random().toString(36).slice(-8);
-        const hashedPassword = await bcrypt.hash(randomPassword, 10);
-        
-        const newUserRes = await pool.query(
-          `INSERT INTO users (email, password, is_temp, name) 
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-          [newEmail, hashedPassword, !targetEmail, targetEmail ? 'Партнер' : 'Временный аккаунт']
-        );
-        partnerUserId = newUserRes.rows[0].id;
-      }
-
-      // Выдаем 1+1 абонемент второму пользователю
-      const partnerSubRes = await pool.query('SELECT sessions_left, end_date FROM subscriptions WHERE user_id = $1', [partnerUserId]);
-      
-      if (partnerSubRes.rows.length > 0) {
-        const oldSessionsPartner = partnerSubRes.rows[0].sessions_left || 0;
-        const oldEndDatePartner = partnerSubRes.rows[0].end_date;
-        
-        await pool.query(
-          `UPDATE subscriptions 
-           SET sessions_left = sessions_left + $1, 
-               end_date = COALESCE($2, end_date),
-               type = $3,
-               updated_at = CURRENT_TIMESTAMP
-           WHERE user_id = $4`,
-          [newSessions, endDate, type, partnerUserId]
-        );
-
-        await pool.query(
-          `INSERT INTO subscription_history 
-           (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
-           VALUES ($1, 'gift', $2, $3, $4, $5, $6, $7)`,
-          [partnerUserId, sessions, oldSessionsPartner, oldSessionsPartner + sessions, oldEndDatePartner, endDate, type]
-        );
-      } else {
-        await pool.query(
-          `INSERT INTO subscriptions (user_id, sessions_left, end_date, type)
-           VALUES ($1, $2, $3, $4)`,
-          [partnerUserId, newSessions, endDate, type]
-        );
-        
-        await pool.query(
-          `INSERT INTO subscription_history 
-           (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
-           VALUES ($1, 'gift', $2, 0, $2, NULL, $3, $4)`,
-          [partnerUserId, sessions, endDate, type]
-        );
-      }
-
-      // Уведомление второму пользователю
-      await pool.query(
-        `INSERT INTO notifications (user_id, title, message) 
-         VALUES ($1, $2, $3)`,
-        [partnerUserId, 'Вам подарен абонемент!', `Вам начислен абонемент 1+1: ${sessions} занятий.`]
-      );
-    }
-
-    const updated = await pool.query('SELECT * FROM subscriptions WHERE user_id = $1', [req.user.id]);
 
     res.json({ 
-      message: 'Абонемент приобретён', 
-      subscription: updated.rows[0]
+      message: 'Запрос на покупку отправлен администратору. Ожидайте подтверждения.'
     });
   } catch (error) {
-    console.error('Ошибка покупки абонемента:', error);
+    console.error('Ошибка создания запроса на абонемент:', error);
     res.status(500).json({ error: 'Ошибка сервера' });
   }
 }
@@ -410,11 +270,260 @@ export async function getAllPromoCodes(req, res) {
   }
 }
 
+// Получить запросы пользователя
+export async function getUserRequests(req, res) {
+  try {
+    const result = await pool.query(
+      `SELECT * FROM subscription_requests 
+       WHERE user_id = $1 
+       ORDER BY created_at DESC`,
+      [req.user.id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка получения запросов:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+}
+
+// Получить все ожидающие запросы (админ)
+export async function getPendingRequests(req, res) {
+  try {
+    const result = await pool.query(`
+      SELECT 
+        sr.*,
+        u.name as user_name,
+        u.email as user_email
+      FROM subscription_requests sr
+      JOIN users u ON sr.user_id = u.id
+      WHERE sr.status = 'pending'
+      ORDER BY sr.created_at ASC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Ошибка получения запросов:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+}
+
+// Подтвердить запрос (админ)
+export async function approveRequest(req, res) {
+  const { id } = req.params;
+
+  try {
+    // Получаем запрос
+    const reqResult = await pool.query('SELECT * FROM subscription_requests WHERE id = $1', [id]);
+    if (reqResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Запрос не найден' });
+    }
+    
+    const request = reqResult.rows[0];
+    if (request.status !== 'pending') {
+      return res.status(400).json({ error: 'Запрос уже обработан' });
+    }
+
+    const { user_id, sessions, type, months, partner_email } = request;
+    const is_premium_pair = type === '1+1';
+
+    // Получаем текущий абонемент пользователя
+    const currentSub = await pool.query(
+      'SELECT sessions_left, end_date FROM subscriptions WHERE user_id = $1',
+      [user_id]
+    );
+
+    let newSessions = sessions;
+    let endDate = null;
+
+    if (months) {
+      const currentDate = new Date();
+      if (currentSub.rows.length > 0 && currentSub.rows[0].end_date) {
+        const currentEnd = new Date(currentSub.rows[0].end_date);
+        if (currentEnd > currentDate) {
+          endDate = new Date(currentEnd);
+          endDate.setMonth(endDate.getMonth() + months);
+        } else {
+          endDate = new Date();
+          endDate.setMonth(endDate.getMonth() + months);
+        }
+      } else {
+        endDate = new Date();
+        endDate.setMonth(endDate.getMonth() + months);
+      }
+    }
+
+    // Обновляем или создаём абонемент
+    if (currentSub.rows.length > 0) {
+      const oldSessions = currentSub.rows[0].sessions_left || 0;
+      const oldEndDate = currentSub.rows[0].end_date;
+      
+      await pool.query(
+        `UPDATE subscriptions 
+         SET sessions_left = sessions_left + $1, 
+             end_date = COALESCE($2, end_date),
+             type = $3,
+             is_premium_pair = COALESCE($4, is_premium_pair),
+             updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = $5`,
+        [newSessions, endDate, type, is_premium_pair, user_id]
+      );
+
+      // Записываем в историю
+      await pool.query(
+        `INSERT INTO subscription_history 
+         (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
+         VALUES ($1, 'purchase', $2, $3, $4, $5, $6, $7)`,
+        [user_id, sessions, oldSessions, oldSessions + sessions, oldEndDate, endDate, type]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO subscriptions (user_id, sessions_left, end_date, type, is_premium_pair)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [user_id, newSessions, endDate, type, is_premium_pair]
+      );
+      
+      await pool.query(
+        `INSERT INTO subscription_history 
+         (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
+         VALUES ($1, 'purchase', $2, 0, $2, NULL, $3, $4)`,
+        [user_id, sessions, endDate, type]
+      );
+    }
+
+    // Логика для 1+1: создание второго пользователя и выдача ему абонемента
+    if (type === '1+1') {
+      let partnerUserId = null;
+      let targetEmail = partner_email;
+
+      if (targetEmail) {
+        // Проверяем, есть ли пользователь с таким email
+        const userRes = await pool.query('SELECT id FROM users WHERE email = $1', [targetEmail]);
+        if (userRes.rows.length > 0) {
+          partnerUserId = userRes.rows[0].id;
+        }
+      }
+
+      if (!partnerUserId) {
+        // Создаем пользователя (либо временного, либо с указанным email)
+        const newEmail = targetEmail || \`temp_\${Date.now()}@freedomlife.com\`;
+        const randomPassword = Math.random().toString(36).slice(-8);
+        const hashedPassword = await bcrypt.hash(randomPassword, 10);
+        
+        const newUserRes = await pool.query(
+          `INSERT INTO users (email, password, is_temp, name) 
+           VALUES ($1, $2, $3, $4) RETURNING id`,
+          [newEmail, hashedPassword, !targetEmail, targetEmail ? 'Партнер' : 'Временный аккаунт']
+        );
+        partnerUserId = newUserRes.rows[0].id;
+      }
+
+      // Выдаем 1+1 абонемент второму пользователю
+      const partnerSubRes = await pool.query('SELECT sessions_left, end_date FROM subscriptions WHERE user_id = $1', [partnerUserId]);
+      
+      if (partnerSubRes.rows.length > 0) {
+        const oldSessionsPartner = partnerSubRes.rows[0].sessions_left || 0;
+        const oldEndDatePartner = partnerSubRes.rows[0].end_date;
+        
+        await pool.query(
+          `UPDATE subscriptions 
+           SET sessions_left = sessions_left + $1, 
+               end_date = COALESCE($2, end_date),
+               type = $3,
+               updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = $4`,
+          [newSessions, endDate, type, partnerUserId]
+        );
+
+        await pool.query(
+          `INSERT INTO subscription_history 
+           (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
+           VALUES ($1, 'gift', $2, $3, $4, $5, $6, $7)`,
+          [partnerUserId, sessions, oldSessionsPartner, oldSessionsPartner + sessions, oldEndDatePartner, endDate, type]
+        );
+      } else {
+        await pool.query(
+          `INSERT INTO subscriptions (user_id, sessions_left, end_date, type)
+           VALUES ($1, $2, $3, $4)`,
+          [partnerUserId, newSessions, endDate, type]
+        );
+        
+        await pool.query(
+          `INSERT INTO subscription_history 
+           (user_id, action, sessions_change, old_sessions, new_sessions, old_end_date, new_end_date, subscription_type)
+           VALUES ($1, 'gift', $2, 0, $2, NULL, $3, $4)`,
+          [partnerUserId, sessions, endDate, type]
+        );
+      }
+
+      // Уведомление второму пользователю
+      await pool.query(
+        `INSERT INTO notifications (user_id, title, message) 
+         VALUES ($1, $2, $3)`,
+        [partnerUserId, 'Вам подарен абонемент!', \`Вам начислен абонемент 1+1: \${sessions} занятий.\`]
+      );
+    }
+
+    // Обновляем статус запроса
+    await pool.query(
+      "UPDATE subscription_requests SET status = 'approved', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+      [id]
+    );
+
+    // Создаём уведомление для пользователя
+    await pool.query(
+      `INSERT INTO notifications (user_id, title, message) 
+       VALUES ($1, $2, $3)`,
+      [user_id, 'Оплата подтверждена', \`Ваш запрос на абонемент подтвержден: \${sessions} занятий, тип: \${type}\`]
+    );
+
+    res.json({ message: 'Запрос подтвержден и абонемент начислен' });
+  } catch (error) {
+    console.error('Ошибка подтверждения запроса:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+}
+
+// Отклонить запрос (админ)
+export async function rejectRequest(req, res) {
+  const { id } = req.params;
+
+  try {
+    const reqResult = await pool.query('SELECT * FROM subscription_requests WHERE id = $1', [id]);
+    if (reqResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Запрос не найден' });
+    }
+    
+    const request = reqResult.rows[0];
+    if (request.status !== 'pending') {
+      return res.status(400).json({ error: 'Запрос уже обработан' });
+    }
+
+    await pool.query(
+      "UPDATE subscription_requests SET status = 'rejected', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
+      [id]
+    );
+
+    await pool.query(
+      `INSERT INTO notifications (user_id, title, message) 
+       VALUES ($1, $2, $3)`,
+      [request.user_id, 'Оплата отклонена', \`Ваш запрос на абонемент (\${request.type}) был отклонен администратором.\`]
+    );
+
+    res.json({ message: 'Запрос отклонен' });
+  } catch (error) {
+    console.error('Ошибка отклонения запроса:', error);
+    res.status(500).json({ error: 'Ошибка сервера' });
+  }
+}
+
 export default { 
   getSubscription, 
   purchaseSubscription, 
   activatePromoCode, 
   adminUpdateSubscription,
   createPromoCode,
-  getAllPromoCodes
+  getAllPromoCodes,
+  getUserRequests,
+  getPendingRequests,
+  approveRequest,
+  rejectRequest
 };

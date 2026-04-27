@@ -37,6 +37,7 @@ export default function AdminPanel() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [promoCodes, setPromoCodes] = useState([]);
+  const [requests, setRequests] = useState([]);
   const [openActionsMenu, setOpenActionsMenu] = useState(null);
   
   // Формы
@@ -86,6 +87,9 @@ export default function AdminPanel() {
     if (activeTab === 'promo') {
       loadPromoCodes();
     }
+    if (activeTab === 'requests') {
+      loadRequests();
+    }
   }, [activeTab]);
 
   const loadData = async () => {
@@ -115,6 +119,50 @@ export default function AdminPanel() {
       }
     } catch (error) {
       console.error('Ошибка загрузки промокодов:', error);
+    }
+  };
+
+  const loadRequests = async () => {
+    try {
+      const res = await api.get('/subscriptions/admin/requests');
+      if (res.ok) {
+        setRequests(await res.json());
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки запросов:', error);
+    }
+  };
+
+  const handleApproveRequest = async (id) => {
+    if (!confirm('Подтвердить оплату и начислить абонемент?')) return;
+    try {
+      const res = await api.post(`/subscriptions/admin/requests/${id}/approve`);
+      if (res.ok) {
+        alert('Запрос подтвержден!');
+        loadRequests();
+        loadData(); // Обновить статистику
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Ошибка подтверждения');
+      }
+    } catch (error) {
+      alert('Ошибка');
+    }
+  };
+
+  const handleRejectRequest = async (id) => {
+    if (!confirm('Отклонить запрос?')) return;
+    try {
+      const res = await api.post(`/subscriptions/admin/requests/${id}/reject`);
+      if (res.ok) {
+        alert('Запрос отклонен');
+        loadRequests();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Ошибка отклонения');
+      }
+    } catch (error) {
+      alert('Ошибка');
     }
   };
 
@@ -380,6 +428,7 @@ export default function AdminPanel() {
           {[
             { id: 'bookings', label: 'Записи', icon: Calendar },
             { id: 'users', label: 'Пользователи', icon: Users },
+            { id: 'requests', label: 'Запросы', icon: Bell },
             { id: 'scanner', label: 'Сканер QR', icon: QrCode },
             { id: 'promo', label: 'Промокоды', icon: CreditCard },
             { id: 'subscription', label: 'Абонементы', icon: CreditCard },
@@ -537,6 +586,75 @@ export default function AdminPanel() {
                   </>
                 );
               })()}
+            </div>
+          </motion.div>
+        )}
+
+        {/* Запросы на абонементы */}
+        {activeTab === 'requests' && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <div className="bg-white rounded-2xl p-6 shadow-sm">
+              <h2 className="text-xl font-bold mb-4">Ожидающие запросы</h2>
+              
+              {requests.length === 0 ? (
+                <div className="text-center py-12 border-2 border-dashed border-gray-200 rounded-xl">
+                  <CheckCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500 font-medium">Нет новых запросов</p>
+                  <p className="text-sm text-gray-400 mt-1">Все оплаты обработаны</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Дата</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Пользователь</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Абонемент</th>
+                        <th className="px-4 py-3 text-left text-sm font-semibold">Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {requests.map(req => (
+                        <tr key={req.id} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-4 text-sm text-gray-600">
+                            {new Date(req.created_at).toLocaleString('ru-RU')}
+                          </td>
+                          <td className="px-4 py-4">
+                            <p className="font-medium text-gray-900">{req.user_name}</p>
+                            <p className="text-sm text-gray-500">{req.user_email}</p>
+                          </td>
+                          <td className="px-4 py-4">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-teal-50 text-teal-700">
+                              <CreditCard className="w-4 h-4" />
+                              {req.type}
+                            </span>
+                            <p className="text-sm text-gray-500 mt-1">{req.sessions} занятий</p>
+                            {req.partner_email && (
+                              <p className="text-xs text-purple-600 mt-1">Партнер: {req.partner_email}</p>
+                            )}
+                          </td>
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => handleApproveRequest(req.id)}
+                                className="px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white text-sm font-medium rounded-lg transition-colors"
+                              >
+                                Подтвердить
+                              </button>
+                              <button
+                                onClick={() => handleRejectRequest(req.id)}
+                                className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-medium rounded-lg transition-colors"
+                              >
+                                Отклонить
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
